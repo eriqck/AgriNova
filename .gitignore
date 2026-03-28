@@ -1,3 +1,7 @@
 node_modules
 .env
+.env.local
+.next
 npm-debug.log*
+web/.env.local
+web/.next

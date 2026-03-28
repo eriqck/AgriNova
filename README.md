@@ -27,6 +27,7 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 - `src/controllers/` - route handlers
 - `src/routes/` - API routing
 - `docs/api-examples.md` - sample request payloads for the MVP flow
+- `web/` - Next.js frontend for local farmer and buyer flows
 
 ## Setup
 
@@ -36,6 +37,14 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 4. Install dependencies with `npm install`
 5. Start the API with `npm run dev`
 6. Register a user and log in to get a Bearer token for protected routes
+
+## Frontend Setup
+
+1. Open `web/`
+2. Copy `web/.env.example` to `web/.env.local`
+3. Run `npm install`
+4. Start the frontend with `npm run dev`
+5. Open `http://localhost:3000`
 
 ## MVP API Surface
 
