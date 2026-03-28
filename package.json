@@ -1,0 +1,19 @@
+{
+  "name": "thika-sacks-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MVP backend for a smart agriculture marketplace platform.",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.12.0"
+  }
+}

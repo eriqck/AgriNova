@@ -1,0 +1,12 @@
+import { Router } from "express";
+import { createOrder, getOrderById, updateOrderStatus } from "../controllers/orders.controller.js";
+import { authenticate, requireRoles } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+
+const router = Router();
+
+router.post("/", authenticate, requireRoles("BUYER", "ADMIN"), asyncHandler(createOrder));
+router.get("/:id", authenticate, asyncHandler(getOrderById));
+router.patch("/:id/status", authenticate, asyncHandler(updateOrderStatus));
+
+export default router;
