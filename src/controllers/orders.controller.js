@@ -1,5 +1,63 @@
 import { pool } from "../config/db.js";
 
+export async function listOrders(req, res) {
+  const { buyerId, sellerId } = req.query;
+  let resolvedBuyerId = buyerId;
+  let resolvedSellerId = sellerId;
+
+  if (req.user?.role !== "ADMIN") {
+    if (resolvedBuyerId && Number(resolvedBuyerId) !== Number(req.user.id)) {
+      return res.status(403).json({ message: "You can only view your own buyer orders." });
+    }
+
+    if (resolvedSellerId && Number(resolvedSellerId) !== Number(req.user.id)) {
+      return res.status(403).json({ message: "You can only view your own seller orders." });
+    }
+
+    if (!resolvedBuyerId && !resolvedSellerId) {
+      if (req.user?.role === "BUYER") {
+        resolvedBuyerId = req.user.id;
+      } else {
+        resolvedSellerId = req.user.id;
+      }
+    }
+  }
+
+  let sql = `
+    SELECT
+      o.*,
+      l.title AS listing_title,
+      buyer.full_name AS buyer_name,
+      seller.full_name AS seller_name,
+      payment.status AS payment_status,
+      payment.provider_reference,
+      delivery.status AS delivery_status
+    FROM orders o
+    JOIN listings l ON l.id = o.listing_id
+    JOIN users buyer ON buyer.id = o.buyer_id
+    JOIN users seller ON seller.id = o.seller_id
+    LEFT JOIN payments payment ON payment.order_id = o.id
+    LEFT JOIN deliveries delivery ON delivery.order_id = o.id
+    WHERE 1 = 1
+  `;
+  const params = [];
+
+  if (resolvedBuyerId) {
+    sql += " AND o.buyer_id = ?";
+    params.push(resolvedBuyerId);
+  }
+
+  if (resolvedSellerId) {
+    sql += " AND o.seller_id = ?";
+    params.push(resolvedSellerId);
+  }
+
+  sql += " ORDER BY o.created_at DESC";
+
+  const [rows] = await pool.execute(sql, params);
+  res.json(rows);
+}
+
 export async function createOrder(req, res) {
   const { listingId, quantity, deliveryAddress, deliveryNotes } = req.body;
   const buyerId = req.user?.role === "ADMIN" ? req.body.buyerId : req.user?.id;

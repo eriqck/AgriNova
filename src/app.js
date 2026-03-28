@@ -1,3 +1,4 @@
+import path from "node:path";
 import cors from "cors";
 import express from "express";
 import routes from "./routes/index.js";
@@ -15,6 +16,7 @@ app.use((req, res, next) => {
 
   return jsonParser(req, res, next);
 });
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/v1", routes);
 app.use(notFoundHandler);
 app.use(errorHandler);

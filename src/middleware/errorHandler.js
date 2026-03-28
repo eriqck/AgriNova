@@ -7,6 +7,12 @@ export function notFoundHandler(req, res) {
 export function errorHandler(error, req, res, next) {
   const statusCode = error.statusCode || 500;
 
+  if (error.name === "MulterError") {
+    return res.status(400).json({
+      message: error.message || "Upload failed."
+    });
+  }
+
   if (error.code === "ER_DUP_ENTRY") {
     return res.status(409).json({
       message: "A record with the same unique value already exists."

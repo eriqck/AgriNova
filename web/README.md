@@ -5,10 +5,13 @@ This is the visual frontend for the AgriNova MVP. It connects to the Express bac
 - Buyer and farmer account creation
 - Login with JWT-backed backend auth
 - Live listing discovery
-- Farmer farm creation
-- Farmer listing publication
+- Buyer and seller workspace creation
+- Buyer and seller listing publication
+- Device image upload during listing creation
 - Buyer order placement
 - Paystack checkout handoff
+- Buyer order dashboard
+- Seller listing and order dashboard
 
 ## Setup
 

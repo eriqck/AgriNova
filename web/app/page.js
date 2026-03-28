@@ -6,7 +6,8 @@ import {
   getStoredSession,
   loginUser,
   registerUser,
-  saveSession
+  saveSession,
+  toAssetUrl
 } from "../lib/api";
 
 const emptyRegisterForm = {
@@ -36,11 +37,8 @@ const emptyListingForm = {
   quantityAvailable: "",
   unit: "kg",
   pricePerUnit: "",
-  minimumOrderQuantity: "",
-  status: "ACTIVE"
+  minimumOrderQuantity: ""
 };
-
-const emptyOrderDraft = {};
 
 function formatMoney(amount) {
   return new Intl.NumberFormat("en-KE", {
@@ -50,20 +48,33 @@ function formatMoney(amount) {
   }).format(Number(amount || 0));
 }
 
+function ListingVisual({ listing }) {
+  const image = listing.images?.[0]?.image_url;
+
+  if (!image) {
+    return <div className="listing-image listing-image--placeholder">{listing.product_name}</div>;
+  }
+
+  return <img alt={listing.title} className="listing-image" src={toAssetUrl(image)} />;
+}
+
 export default function HomePage() {
   const [session, setSession] = useState(null);
   const [products, setProducts] = useState([]);
-  const [listings, setListings] = useState([]);
+  const [marketListings, setMarketListings] = useState([]);
   const [farms, setFarms] = useState([]);
+  const [myListings, setMyListings] = useState([]);
+  const [buyerOrders, setBuyerOrders] = useState([]);
+  const [sellerOrders, setSellerOrders] = useState([]);
   const [registerForm, setRegisterForm] = useState(emptyRegisterForm);
   const [loginForm, setLoginForm] = useState({ phone: "", password: "" });
   const [farmForm, setFarmForm] = useState(emptyFarmForm);
   const [listingForm, setListingForm] = useState(emptyListingForm);
-  const [orderDraft, setOrderDraft] = useState(emptyOrderDraft);
-  const [activePanel, setActivePanel] = useState("buyer");
+  const [listingImages, setListingImages] = useState([]);
+  const [orderDrafts, setOrderDrafts] = useState({});
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState({
-    listings: false,
+    page: false,
     register: false,
     login: false,
     farm: false,
@@ -72,66 +83,83 @@ export default function HomePage() {
     payment: false
   });
 
-  const isFarmer = session?.user?.role === "FARMER";
   const isBuyer = session?.user?.role === "BUYER";
+  const canSell = Boolean(session);
 
   useEffect(() => {
     const stored = getStoredSession();
     if (stored) {
       setSession(stored);
-      setActivePanel(stored.user.role === "FARMER" ? "farmer" : "buyer");
     }
-  }, []);
-
-  useEffect(() => {
     void loadPublicData();
   }, []);
 
   useEffect(() => {
-    if (session?.token && isFarmer) {
-      void loadFarms(session.token, session.user.id);
+    if (session?.token) {
+      void loadPrivateData(session);
     }
-  }, [session, isFarmer]);
+  }, [session]);
 
-  const featuredStats = useMemo(
+  const dashboardStats = useMemo(
     () => [
-      { label: "Live listings", value: listings.length || "00" },
-      { label: "Seed products", value: products.length || "00" },
-      { label: "MVP focus", value: "Farm -> Buyer -> Pay" }
+      { label: "Market listings", value: marketListings.length || 0 },
+      { label: "My listings", value: myListings.length || 0 },
+      { label: "Tracked orders", value: buyerOrders.length + sellerOrders.length }
     ],
-    [listings.length, products.length]
+    [buyerOrders.length, marketListings.length, myListings.length, sellerOrders.length]
   );
 
   async function loadPublicData() {
-    setLoading((current) => ({ ...current, listings: true }));
+    setLoading((current) => ({ ...current, page: true }));
     try {
-      const [productsData, listingsData] = await Promise.all([
+      const [productData, listingData] = await Promise.all([
         apiRequest("/products"),
         apiRequest("/listings")
       ]);
-
-      setProducts(productsData);
-      setListings(listingsData);
+      setProducts(productData);
+      setMarketListings(listingData);
     } catch (error) {
       setFeedback(error.message);
     } finally {
-      setLoading((current) => ({ ...current, listings: false }));
+      setLoading((current) => ({ ...current, page: false }));
     }
   }
 
-  async function loadFarms(token, farmerId) {
+  async function loadPrivateData(currentSession) {
+    setLoading((current) => ({ ...current, page: true }));
     try {
-      const farmData = await apiRequest(`/farms?farmerId=${farmerId}`, {
-        token
-      });
+      const [farmData, listingData, buyerOrderData, sellerOrderData] = await Promise.all([
+        apiRequest(`/farms?farmerId=${currentSession.user.id}`, { token: currentSession.token }),
+        apiRequest(`/listings?ownerId=${currentSession.user.id}&status=ALL`, {
+          token: currentSession.token
+        }),
+        apiRequest(`/orders?buyerId=${currentSession.user.id}`, {
+          token: currentSession.token
+        }).catch(() => []),
+        apiRequest(`/orders?sellerId=${currentSession.user.id}`, {
+          token: currentSession.token
+        }).catch(() => [])
+      ]);
 
       setFarms(farmData);
+      setMyListings(listingData);
+      setBuyerOrders(buyerOrderData);
+      setSellerOrders(sellerOrderData);
       setListingForm((current) => ({
         ...current,
         farmId: farmData[0]?.id ? String(farmData[0].id) : ""
       }));
     } catch (error) {
       setFeedback(error.message);
+    } finally {
+      setLoading((current) => ({ ...current, page: false }));
+    }
+  }
+
+  async function refreshEverything(currentSession = session) {
+    await loadPublicData();
+    if (currentSession?.token) {
+      await loadPrivateData(currentSession);
     }
   }
 
@@ -139,11 +167,10 @@ export default function HomePage() {
     event.preventDefault();
     setLoading((current) => ({ ...current, register: true }));
     setFeedback("");
-
     try {
       await registerUser(registerForm);
-      setFeedback("Account created. Log in to continue.");
       setRegisterForm(emptyRegisterForm);
+      setFeedback("Account created. You can log in now.");
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -155,12 +182,10 @@ export default function HomePage() {
     event.preventDefault();
     setLoading((current) => ({ ...current, login: true }));
     setFeedback("");
-
     try {
       const nextSession = await loginUser(loginForm);
       saveSession(nextSession);
       setSession(nextSession);
-      setActivePanel(nextSession.user.role === "FARMER" ? "farmer" : "buyer");
       setFeedback(`Welcome back, ${nextSession.user.full_name}.`);
     } catch (error) {
       setFeedback(error.message);
@@ -173,7 +198,6 @@ export default function HomePage() {
     event.preventDefault();
     setLoading((current) => ({ ...current, farm: true }));
     setFeedback("");
-
     try {
       await apiRequest("/farms", {
         method: "POST",
@@ -183,10 +207,9 @@ export default function HomePage() {
           acreage: farmForm.acreage ? Number(farmForm.acreage) : null
         }
       });
-
       setFarmForm(emptyFarmForm);
-      await loadFarms(session.token, session.user.id);
-      setFeedback("Farm profile created.");
+      await refreshEverything();
+      setFeedback("Workspace saved.");
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -198,19 +221,25 @@ export default function HomePage() {
     event.preventDefault();
     setLoading((current) => ({ ...current, listing: true }));
     setFeedback("");
-
     try {
+      const formData = new FormData();
+      Object.entries({
+        farmId: listingForm.farmId,
+        productId: listingForm.productId,
+        title: listingForm.title,
+        description: listingForm.description,
+        quantityAvailable: listingForm.quantityAvailable,
+        unit: listingForm.unit,
+        pricePerUnit: listingForm.pricePerUnit,
+        minimumOrderQuantity: listingForm.minimumOrderQuantity || "1"
+      }).forEach(([key, value]) => formData.append(key, value));
+
+      listingImages.forEach((file) => formData.append("images", file));
+
       await apiRequest("/listings", {
         method: "POST",
         token: session.token,
-        body: {
-          ...listingForm,
-          farmId: Number(listingForm.farmId),
-          productId: Number(listingForm.productId),
-          quantityAvailable: Number(listingForm.quantityAvailable),
-          pricePerUnit: Number(listingForm.pricePerUnit),
-          minimumOrderQuantity: Number(listingForm.minimumOrderQuantity || 1)
-        }
+        body: formData
       });
 
       setListingForm((current) => ({
@@ -218,8 +247,13 @@ export default function HomePage() {
         farmId: current.farmId,
         productId: current.productId
       }));
-      await loadPublicData();
-      setFeedback("Listing published successfully.");
+      setListingImages([]);
+      const input = document.getElementById("listing-images");
+      if (input) {
+        input.value = "";
+      }
+      await refreshEverything();
+      setFeedback("Listing published with images.");
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -227,26 +261,24 @@ export default function HomePage() {
     }
   }
 
-  async function handleOrderSubmit(event) {
+  async function handleCreateOrder(event, listingId) {
     event.preventDefault();
     setLoading((current) => ({ ...current, order: true }));
     setFeedback("");
-
     try {
-      const order = await apiRequest("/orders", {
+      const draft = orderDrafts[listingId] || {};
+      await apiRequest("/orders", {
         method: "POST",
         token: session.token,
         body: {
-          listingId: Number(orderDraft.listingId),
-          quantity: Number(orderDraft.quantity),
-          deliveryAddress: orderDraft.deliveryAddress,
-          deliveryNotes: orderDraft.deliveryNotes
+          listingId,
+          quantity: Number(draft.quantity),
+          deliveryAddress: draft.deliveryAddress,
+          deliveryNotes: draft.deliveryNotes
         }
       });
-
-      setOrderDraft({ orderId: order.id, listingId: order.listing_id });
-      await loadPublicData();
-      setFeedback(`Order #${order.id} created. You can now start payment.`);
+      await refreshEverything();
+      setFeedback("Order created. You can pay from your buyer dashboard.");
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -257,7 +289,6 @@ export default function HomePage() {
   async function handlePaymentStart(orderId) {
     setLoading((current) => ({ ...current, payment: true }));
     setFeedback("");
-
     try {
       const response = await apiRequest("/payments/initialize", {
         method: "POST",
@@ -265,14 +296,11 @@ export default function HomePage() {
         body: {
           orderId,
           provider: "PAYSTACK",
-          metadata: {
-            source: "agrinova-web"
-          }
+          metadata: { source: "agrinova-web" }
         }
       });
-
-      setFeedback("Payment session created. Opening Paystack checkout.");
       window.open(response.checkout.authorization_url, "_blank", "noopener,noreferrer");
+      setFeedback("Paystack checkout opened in a new tab.");
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -280,11 +308,23 @@ export default function HomePage() {
     }
   }
 
+  function updateOrderDraft(listingId, field, value) {
+    setOrderDrafts((current) => ({
+      ...current,
+      [listingId]: {
+        ...(current[listingId] || {}),
+        [field]: value
+      }
+    }));
+  }
+
   function logout() {
     localStorage.removeItem("agrinova_session");
     setSession(null);
     setFarms([]);
-    setActivePanel("buyer");
+    setMyListings([]);
+    setBuyerOrders([]);
+    setSellerOrders([]);
     setFeedback("Signed out.");
   }
 
@@ -292,155 +332,52 @@ export default function HomePage() {
     <main className="page-shell">
       <section className="hero">
         <div className="hero-copy">
-          <span className="eyebrow">AgriNova Marketplace MVP</span>
-          <h1>The operating layer for farmers, buyers, and fast local trade.</h1>
+          <span className="eyebrow">AgriNova</span>
+          <h1>Upload products, track orders, and sell faster.</h1>
           <p>
-            Log in locally, publish produce, place orders, and launch a live Paystack
-            checkout flow from one streamlined interface.
+            Buyers and farmers can now upload listings from device storage with images,
+            monitor activity, and move from order to checkout without leaving the app.
           </p>
-
           <div className="stats-grid">
-            {featuredStats.map((stat) => (
+            {dashboardStats.map((stat) => (
               <article className="stat-card" key={stat.label}>
                 <strong>{stat.value}</strong>
                 <span>{stat.label}</span>
               </article>
             ))}
           </div>
-
           <div className="hero-banner">
-            <span>Current API target</span>
+            <span>Backend target</span>
             <code>{process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api/v1"}</code>
           </div>
         </div>
 
         <div className="auth-panel">
-          <div className="panel-tabs">
-            <button
-              className={activePanel === "buyer" ? "active" : ""}
-              onClick={() => setActivePanel("buyer")}
-              type="button"
-            >
-              Buyer View
-            </button>
-            <button
-              className={activePanel === "farmer" ? "active" : ""}
-              onClick={() => setActivePanel("farmer")}
-              type="button"
-            >
-              Farmer View
-            </button>
-          </div>
-
           {!session ? (
             <div className="panel-grid">
               <form className="glass-card" onSubmit={handleLogin}>
                 <h2>Login</h2>
-                <label>
-                  Phone
-                  <input
-                    value={loginForm.phone}
-                    onChange={(event) =>
-                      setLoginForm((current) => ({ ...current, phone: event.target.value }))
-                    }
-                    placeholder="+2547..."
-                  />
-                </label>
-                <label>
-                  Password
-                  <input
-                    type="password"
-                    value={loginForm.password}
-                    onChange={(event) =>
-                      setLoginForm((current) => ({ ...current, password: event.target.value }))
-                    }
-                    placeholder="Your password"
-                  />
-                </label>
-                <button className="primary-button" disabled={loading.login} type="submit">
-                  {loading.login ? "Signing in..." : "Sign In"}
-                </button>
+                <label>Phone<input value={loginForm.phone} onChange={(e) => setLoginForm((c) => ({ ...c, phone: e.target.value }))} /></label>
+                <label>Password<input type="password" value={loginForm.password} onChange={(e) => setLoginForm((c) => ({ ...c, password: e.target.value }))} /></label>
+                <button className="primary-button" disabled={loading.login} type="submit">{loading.login ? "Signing in..." : "Sign In"}</button>
               </form>
 
               <form className="glass-card" onSubmit={handleRegister}>
                 <h2>Create Account</h2>
                 <div className="split-fields">
-                  <label>
-                    Full name
-                    <input
-                      value={registerForm.fullName}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, fullName: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Role
-                    <select
-                      value={registerForm.role}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, role: event.target.value }))
-                      }
-                    >
-                      <option value="FARMER">Farmer</option>
-                      <option value="BUYER">Buyer</option>
-                    </select>
-                  </label>
+                  <label>Full name<input value={registerForm.fullName} onChange={(e) => setRegisterForm((c) => ({ ...c, fullName: e.target.value }))} /></label>
+                  <label>Role<select value={registerForm.role} onChange={(e) => setRegisterForm((c) => ({ ...c, role: e.target.value }))}><option value="FARMER">Farmer</option><option value="BUYER">Buyer</option></select></label>
                 </div>
                 <div className="split-fields">
-                  <label>
-                    Phone
-                    <input
-                      value={registerForm.phone}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, phone: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Email
-                    <input
-                      type="email"
-                      value={registerForm.email}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, email: event.target.value }))
-                      }
-                    />
-                  </label>
+                  <label>Phone<input value={registerForm.phone} onChange={(e) => setRegisterForm((c) => ({ ...c, phone: e.target.value }))} /></label>
+                  <label>Email<input value={registerForm.email} onChange={(e) => setRegisterForm((c) => ({ ...c, email: e.target.value }))} /></label>
                 </div>
                 <div className="split-fields">
-                  <label>
-                    County
-                    <input
-                      value={registerForm.county}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, county: event.target.value }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Sub-county
-                    <input
-                      value={registerForm.subCounty}
-                      onChange={(event) =>
-                        setRegisterForm((current) => ({ ...current, subCounty: event.target.value }))
-                      }
-                    />
-                  </label>
+                  <label>County<input value={registerForm.county} onChange={(e) => setRegisterForm((c) => ({ ...c, county: e.target.value }))} /></label>
+                  <label>Sub-county<input value={registerForm.subCounty} onChange={(e) => setRegisterForm((c) => ({ ...c, subCounty: e.target.value }))} /></label>
                 </div>
-                <label>
-                  Password
-                  <input
-                    type="password"
-                    value={registerForm.password}
-                    onChange={(event) =>
-                      setRegisterForm((current) => ({ ...current, password: event.target.value }))
-                    }
-                  />
-                </label>
-                <button className="primary-button" disabled={loading.register} type="submit">
-                  {loading.register ? "Creating..." : "Create Account"}
-                </button>
+                <label>Password<input type="password" value={registerForm.password} onChange={(e) => setRegisterForm((c) => ({ ...c, password: e.target.value }))} /></label>
+                <button className="primary-button" disabled={loading.register} type="submit">{loading.register ? "Creating..." : "Create Account"}</button>
               </form>
             </div>
           ) : (
@@ -450,18 +387,11 @@ export default function HomePage() {
                   <span className="badge">{session.user.role}</span>
                   <h2>{session.user.full_name}</h2>
                 </div>
-                <button className="ghost-button" onClick={logout} type="button">
-                  Sign Out
-                </button>
+                <button className="ghost-button" onClick={logout} type="button">Sign Out</button>
               </div>
-              <p>
-                {isFarmer
-                  ? "You can register farms and publish fresh produce for buyers."
-                  : "You can browse listings, place orders, and start secure checkout."}
-              </p>
+              <p>{isBuyer ? "You can buy and also upload product listings with images." : "You can manage your listings and incoming buyer orders."}</p>
             </div>
           )}
-
           {feedback ? <p className="feedback">{feedback}</p> : null}
         </div>
       </section>
@@ -469,279 +399,141 @@ export default function HomePage() {
       <section className="workspace">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">Live marketplace</span>
-            <h2>Fresh listings from the backend</h2>
+            <span className="eyebrow">Marketplace</span>
+            <h2>Live listings</h2>
           </div>
-          {loading.listings ? <span className="loading-pill">Refreshing...</span> : null}
+          {loading.page ? <span className="loading-pill">Syncing...</span> : null}
         </div>
-
         <div className="listings-grid">
-          {listings.map((listing) => (
+          {marketListings.map((listing) => (
             <article className="listing-card" key={listing.id}>
-              <div className="listing-meta">
-                <span>{listing.product_name}</span>
-                <span>{listing.county}</span>
-              </div>
+              <ListingVisual listing={listing} />
+              <div className="listing-meta"><span>{listing.product_name}</span><span>{listing.county}</span></div>
               <h3>{listing.title}</h3>
               <p>{listing.description || "Fresh produce ready for delivery."}</p>
-              <div className="listing-metrics">
-                <strong>{formatMoney(listing.price_per_unit)}</strong>
-                <span>per {listing.unit}</span>
-              </div>
-              <div className="listing-footer">
-                <span>
-                  {listing.quantity_available} {listing.unit} available
-                </span>
-                <span>Farmer: {listing.farmer_name}</span>
-              </div>
-
+              <div className="listing-metrics"><strong>{formatMoney(listing.price_per_unit)}</strong><span>per {listing.unit}</span></div>
+              <div className="listing-footer"><span>{listing.quantity_available} {listing.unit} available</span><span>Seller: {listing.seller_name}</span></div>
               {isBuyer ? (
-                <form className="inline-order-form" onSubmit={handleOrderSubmit}>
-                  <input
-                    type="number"
-                    min={listing.minimum_order_quantity || 1}
-                    placeholder={`Min ${listing.minimum_order_quantity || 1}`}
-                    value={orderDraft.listingId === listing.id ? orderDraft.quantity || "" : ""}
-                    onChange={(event) =>
-                      setOrderDraft({
-                        listingId: listing.id,
-                        quantity: event.target.value,
-                        deliveryAddress: orderDraft.deliveryAddress || "",
-                        deliveryNotes: orderDraft.deliveryNotes || ""
-                      })
-                    }
-                  />
-                  <input
-                    placeholder="Delivery address"
-                    value={orderDraft.listingId === listing.id ? orderDraft.deliveryAddress || "" : ""}
-                    onChange={(event) =>
-                      setOrderDraft((current) => ({
-                        ...current,
-                        listingId: listing.id,
-                        deliveryAddress: event.target.value
-                      }))
-                    }
-                  />
-                  <input
-                    placeholder="Delivery notes"
-                    value={orderDraft.listingId === listing.id ? orderDraft.deliveryNotes || "" : ""}
-                    onChange={(event) =>
-                      setOrderDraft((current) => ({
-                        ...current,
-                        listingId: listing.id,
-                        deliveryNotes: event.target.value
-                      }))
-                    }
-                  />
-                  <button className="primary-button" disabled={loading.order} type="submit">
-                    {loading.order ? "Ordering..." : "Place Order"}
-                  </button>
+                <form className="inline-order-form" onSubmit={(event) => handleCreateOrder(event, listing.id)}>
+                  <input type="number" min={listing.minimum_order_quantity || 1} placeholder={`Min ${listing.minimum_order_quantity || 1}`} value={orderDrafts[listing.id]?.quantity || ""} onChange={(e) => updateOrderDraft(listing.id, "quantity", e.target.value)} />
+                  <input placeholder="Delivery address" value={orderDrafts[listing.id]?.deliveryAddress || ""} onChange={(e) => updateOrderDraft(listing.id, "deliveryAddress", e.target.value)} />
+                  <input placeholder="Delivery notes" value={orderDrafts[listing.id]?.deliveryNotes || ""} onChange={(e) => updateOrderDraft(listing.id, "deliveryNotes", e.target.value)} />
+                  <button className="primary-button" disabled={loading.order} type="submit">{loading.order ? "Ordering..." : "Place Order"}</button>
                 </form>
-              ) : null}
-
-              {isBuyer && orderDraft.orderId && orderDraft.listingId === listing.id ? (
-                <button
-                  className="accent-button"
-                  disabled={loading.payment}
-                  onClick={() => handlePaymentStart(orderDraft.orderId)}
-                  type="button"
-                >
-                  {loading.payment ? "Opening checkout..." : "Start Paystack Checkout"}
-                </button>
               ) : null}
             </article>
           ))}
         </div>
       </section>
 
-      {isFarmer ? (
-        <section className="workspace farmer-tools">
+      {canSell ? (
+        <section className="workspace">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">Farmer control room</span>
-              <h2>Register farms and publish produce</h2>
+              <span className="eyebrow">Seller Studio</span>
+              <h2>Upload products from your device</h2>
             </div>
           </div>
-
           <div className="panel-grid">
             <form className="glass-card" onSubmit={handleCreateFarm}>
-              <h3>Create Farm</h3>
+              <h3>Workspace</h3>
               <div className="split-fields">
-                <label>
-                  Farm name
-                  <input
-                    value={farmForm.farmName}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, farmName: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  County
-                  <input
-                    value={farmForm.county}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, county: event.target.value }))
-                    }
-                  />
-                </label>
+                <label>Name<input value={farmForm.farmName} onChange={(e) => setFarmForm((c) => ({ ...c, farmName: e.target.value }))} /></label>
+                <label>County<input value={farmForm.county} onChange={(e) => setFarmForm((c) => ({ ...c, county: e.target.value }))} /></label>
               </div>
               <div className="split-fields">
-                <label>
-                  Sub-county
-                  <input
-                    value={farmForm.subCounty}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, subCounty: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Village
-                  <input
-                    value={farmForm.village}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, village: event.target.value }))
-                    }
-                  />
-                </label>
+                <label>Sub-county<input value={farmForm.subCounty} onChange={(e) => setFarmForm((c) => ({ ...c, subCounty: e.target.value }))} /></label>
+                <label>Village<input value={farmForm.village} onChange={(e) => setFarmForm((c) => ({ ...c, village: e.target.value }))} /></label>
               </div>
               <div className="split-fields">
-                <label>
-                  Acreage
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={farmForm.acreage}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, acreage: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Soil type
-                  <input
-                    value={farmForm.soilType}
-                    onChange={(event) =>
-                      setFarmForm((current) => ({ ...current, soilType: event.target.value }))
-                    }
-                  />
-                </label>
+                <label>Acreage<input type="number" step="0.1" value={farmForm.acreage} onChange={(e) => setFarmForm((c) => ({ ...c, acreage: e.target.value }))} /></label>
+                <label>Type<input value={farmForm.soilType} onChange={(e) => setFarmForm((c) => ({ ...c, soilType: e.target.value }))} /></label>
               </div>
-              <button className="primary-button" disabled={loading.farm} type="submit">
-                {loading.farm ? "Saving..." : "Save Farm"}
-              </button>
+              <button className="primary-button" disabled={loading.farm} type="submit">{loading.farm ? "Saving..." : "Save Workspace"}</button>
             </form>
 
             <form className="glass-card" onSubmit={handleCreateListing}>
-              <h3>Publish Listing</h3>
+              <h3>New listing</h3>
               <div className="split-fields">
-                <label>
-                  Farm
-                  <select
-                    value={listingForm.farmId}
-                    onChange={(event) =>
-                      setListingForm((current) => ({ ...current, farmId: event.target.value }))
-                    }
-                  >
-                    <option value="">Select farm</option>
-                    {farms.map((farm) => (
-                      <option key={farm.id} value={farm.id}>
-                        {farm.farm_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Product
-                  <select
-                    value={listingForm.productId}
-                    onChange={(event) =>
-                      setListingForm((current) => ({ ...current, productId: event.target.value }))
-                    }
-                  >
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <label>Workspace<select value={listingForm.farmId} onChange={(e) => setListingForm((c) => ({ ...c, farmId: e.target.value }))}><option value="">Select</option>{farms.map((farm) => <option key={farm.id} value={farm.id}>{farm.farm_name}</option>)}</select></label>
+                <label>Product<select value={listingForm.productId} onChange={(e) => setListingForm((c) => ({ ...c, productId: e.target.value }))}>{products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
               </div>
-              <label>
-                Title
-                <input
-                  value={listingForm.title}
-                  onChange={(event) =>
-                    setListingForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Description
-                <textarea
-                  value={listingForm.description}
-                  onChange={(event) =>
-                    setListingForm((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </label>
+              <label>Title<input value={listingForm.title} onChange={(e) => setListingForm((c) => ({ ...c, title: e.target.value }))} /></label>
+              <label>Description<textarea value={listingForm.description} onChange={(e) => setListingForm((c) => ({ ...c, description: e.target.value }))} /></label>
               <div className="split-fields">
-                <label>
-                  Quantity
-                  <input
-                    type="number"
-                    value={listingForm.quantityAvailable}
-                    onChange={(event) =>
-                      setListingForm((current) => ({
-                        ...current,
-                        quantityAvailable: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Unit
-                  <input
-                    value={listingForm.unit}
-                    onChange={(event) =>
-                      setListingForm((current) => ({ ...current, unit: event.target.value }))
-                    }
-                  />
-                </label>
+                <label>Quantity<input type="number" value={listingForm.quantityAvailable} onChange={(e) => setListingForm((c) => ({ ...c, quantityAvailable: e.target.value }))} /></label>
+                <label>Unit<input value={listingForm.unit} onChange={(e) => setListingForm((c) => ({ ...c, unit: e.target.value }))} /></label>
               </div>
               <div className="split-fields">
-                <label>
-                  Price per unit
-                  <input
-                    type="number"
-                    value={listingForm.pricePerUnit}
-                    onChange={(event) =>
-                      setListingForm((current) => ({
-                        ...current,
-                        pricePerUnit: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Minimum order
-                  <input
-                    type="number"
-                    value={listingForm.minimumOrderQuantity}
-                    onChange={(event) =>
-                      setListingForm((current) => ({
-                        ...current,
-                        minimumOrderQuantity: event.target.value
-                      }))
-                    }
-                  />
-                </label>
+                <label>Price per unit<input type="number" value={listingForm.pricePerUnit} onChange={(e) => setListingForm((c) => ({ ...c, pricePerUnit: e.target.value }))} /></label>
+                <label>Minimum order<input type="number" value={listingForm.minimumOrderQuantity} onChange={(e) => setListingForm((c) => ({ ...c, minimumOrderQuantity: e.target.value }))} /></label>
               </div>
-              <button className="primary-button" disabled={loading.listing} type="submit">
-                {loading.listing ? "Publishing..." : "Publish Listing"}
-              </button>
+              <label>Images<input accept="image/*" id="listing-images" multiple type="file" onChange={(e) => setListingImages(Array.from(e.target.files || []))} /></label>
+              {listingImages.length ? <div className="file-chip-row">{listingImages.map((file) => <span className="file-chip" key={`${file.name}-${file.lastModified}`}>{file.name}</span>)}</div> : null}
+              <button className="primary-button" disabled={loading.listing} type="submit">{loading.listing ? "Publishing..." : "Publish Listing"}</button>
             </form>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="glass-card dashboard-card">
+              <h3>My listings</h3>
+              {myListings.length ? (
+                <div className="mini-list">
+                  {myListings.map((listing) => (
+                    <article className="mini-list-item" key={listing.id}>
+                      <ListingVisual listing={listing} />
+                      <div>
+                        <strong>{listing.title}</strong>
+                        <span>{listing.quantity_available} {listing.unit}</span>
+                        <span>{formatMoney(listing.price_per_unit)}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : <p>No listings yet.</p>}
+            </div>
+
+            <div className="glass-card dashboard-card">
+              <h3>Orders on my listings</h3>
+              {sellerOrders.length ? (
+                <div className="order-list">
+                  {sellerOrders.map((order) => (
+                    <article className="order-item" key={order.id}>
+                      <div><strong>Order #{order.id}</strong><span>{order.listing_title}</span></div>
+                      <div><span>Status: {order.status}</span><span>Payment: {order.payment_status || "Pending"}</span></div>
+                      <strong>{formatMoney(order.total_amount)}</strong>
+                    </article>
+                  ))}
+                </div>
+              ) : <p>No seller-side orders yet.</p>}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {isBuyer ? (
+        <section className="workspace">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Buyer Dashboard</span>
+              <h2>My orders</h2>
+            </div>
+          </div>
+          <div className="glass-card dashboard-card">
+            {buyerOrders.length ? (
+              <div className="order-list">
+                {buyerOrders.map((order) => (
+                  <article className="order-item" key={order.id}>
+                    <div><strong>Order #{order.id}</strong><span>{order.listing_title}</span></div>
+                    <div><span>Status: {order.status}</span><span>Payment: {order.payment_status || "Pending"}</span></div>
+                    <div className="order-actions">
+                      <strong>{formatMoney(order.total_amount)}</strong>
+                      {order.status === "PENDING_PAYMENT" ? <button className="accent-button" disabled={loading.payment} onClick={() => handlePaymentStart(order.id)} type="button">Pay Now</button> : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : <p>No buyer orders yet.</p>}
           </div>
         </section>
       ) : null}

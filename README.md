@@ -21,6 +21,7 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 ## Project Structure
 
 - `database/001_mvp_schema.sql` - initial MySQL schema
+- `database/002_listing_images.sql` - image table migration for listing uploads
 - `src/app.js` - Express app setup
 - `src/server.js` - server entrypoint
 - `src/config/` - environment and database config
@@ -45,6 +46,14 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 3. Run `npm install`
 4. Start the frontend with `npm run dev`
 5. Open `http://localhost:3000`
+
+## Current Product Features
+
+- Farmer and buyer registration/login
+- Marketplace browsing
+- Orders and Paystack checkout start
+- Buyer and seller dashboard sections
+- Product listing upload from device with up to 5 images
 
 ## MVP API Surface
 
