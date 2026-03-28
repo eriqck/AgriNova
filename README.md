@@ -1,4 +1,4 @@
-# Thika Sacks Backend MVP
+# AgriNova Backend MVP
 
 This is a lean Express + MySQL starter for the first marketplace loop of the smart agriculture platform:
 
