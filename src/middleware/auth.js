@@ -17,6 +17,24 @@ export function authenticate(req, res, next) {
   }
 }
 
+export function optionalAuthenticate(req, res, next) {
+  const authorization = req.headers.authorization || "";
+  const [scheme, token] = authorization.split(" ");
+
+  if (scheme !== "Bearer" || !token) {
+    req.user = null;
+    return next();
+  }
+
+  try {
+    req.user = jwt.verify(token, env.jwtSecret);
+    next();
+  } catch {
+    req.user = null;
+    next();
+  }
+}
+
 export function requireRoles(...roles) {
   return function roleGuard(req, res, next) {
     if (!req.user) {

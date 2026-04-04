@@ -14,6 +14,9 @@ import {
 
 const initialOrderForm = {
   quantity: "",
+  guestFullName: "",
+  guestPhone: "",
+  guestEmail: "",
   deliveryAddress: "",
   deliveryNotes: ""
 };
@@ -79,29 +82,48 @@ export default function ListingDetailsPage({ listingId }) {
     setError("");
     setMessage("");
 
-    if (!session?.token) {
-      setError("Login as a buyer to place an order.");
-      return;
-    }
-
-    if (!buyerModeEnabled) {
-      setError("Switch this account to buyer mode before placing an order.");
-      return;
-    }
-
     setLoading((current) => ({ ...current, order: true }));
 
     try {
+      if (session?.token && !buyerModeEnabled) {
+        throw new Error("Switch this account to buyer mode before placing an order.");
+      }
+
       const createdOrder = await apiRequest("/orders", {
         method: "POST",
-        token: session.token,
+        token: session?.token,
         body: {
           listingId,
           quantity: Number(orderForm.quantity),
+          guestFullName: !session?.token ? orderForm.guestFullName : undefined,
+          guestPhone: !session?.token ? orderForm.guestPhone : undefined,
+          guestEmail: !session?.token ? orderForm.guestEmail : undefined,
           deliveryAddress: orderForm.deliveryAddress,
           deliveryNotes: orderForm.deliveryNotes
         }
       });
+
+      if (!session?.token) {
+        const guestCheckoutToken = createdOrder.guest_checkout_token;
+        const callbackUrl = `${window.location.origin}/payments/callback?guestCheckoutToken=${encodeURIComponent(guestCheckoutToken || "")}`;
+        const paymentResponse = await apiRequest("/payments/initialize", {
+          method: "POST",
+          body: {
+            orderId: createdOrder.id,
+            guestCheckoutToken,
+            callbackUrl
+          }
+        });
+
+        const checkoutUrl = paymentResponse.checkout?.authorization_url;
+
+        if (!checkoutUrl) {
+          throw new Error("Payment checkout link was not returned.");
+        }
+
+        window.location.href = checkoutUrl;
+        return;
+      }
 
       setMessage(`Order #${createdOrder.id} created successfully. Open the buyer dashboard to complete payment and track delivery.`);
       setOrderForm((current) => ({
@@ -190,9 +212,9 @@ export default function ListingDetailsPage({ listingId }) {
             {!session?.token ? (
               <Link
                 className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                href="/login"
+                href="/signup"
               >
-                Login to order
+                Create account
               </Link>
             ) : null}
             {session?.token && buyerModeEnabled ? (
@@ -312,7 +334,7 @@ export default function ListingDetailsPage({ listingId }) {
 
               {!session?.token ? (
                 <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Login with a buyer account to place an order.
+                  You can check out as a guest below, or create an account if you want order history and dashboards.
                 </div>
               ) : null}
 
@@ -335,6 +357,42 @@ export default function ListingDetailsPage({ listingId }) {
               ) : null}
 
               <form className="mt-6 space-y-4" onSubmit={handleOrderSubmit}>
+                {!session?.token ? (
+                  <div className="grid gap-4">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Full name</span>
+                      <input
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500"
+                        onChange={(event) => setOrderForm((current) => ({ ...current, guestFullName: event.target.value }))}
+                        placeholder="Your full name"
+                        value={orderForm.guestFullName}
+                      />
+                    </label>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-slate-600">Phone number</span>
+                        <input
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500"
+                          onChange={(event) => setOrderForm((current) => ({ ...current, guestPhone: event.target.value }))}
+                          placeholder="+2547..."
+                          value={orderForm.guestPhone}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-slate-600">Email address</span>
+                        <input
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500"
+                          onChange={(event) => setOrderForm((current) => ({ ...current, guestEmail: event.target.value }))}
+                          placeholder="you@example.com"
+                          type="email"
+                          value={orderForm.guestEmail}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium text-slate-600">Quantity</span>
                   <input
@@ -372,7 +430,7 @@ export default function ListingDetailsPage({ listingId }) {
                   disabled={loading.order || !canOrder}
                   type="submit"
                 >
-                  {loading.order ? "Placing order..." : "Place order"}
+                  {loading.order ? "Preparing checkout..." : session?.token ? "Place order" : "Continue to payment"}
                 </button>
               </form>
             </section>

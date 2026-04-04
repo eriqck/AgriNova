@@ -104,10 +104,10 @@ export default function MembershipPageClient({ selectedPlanCode }) {
         <section className="rounded-[36px] bg-slate-950 px-8 py-10 text-white shadow-2xl shadow-slate-300/30 lg:px-12 lg:py-14">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">Membership signup</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
-            Choose the plan that fits how you farm or buy.
+            Choose the plan that fits how you farm.
           </h1>
           <p className="mt-4 max-w-3xl text-base leading-8 text-white/70">
-            Membership plans unlock premium advisory support, farm reporting, buyer tools, and live intelligence. Paid plans use Paystack checkout and activate on successful verification.
+            Membership plans unlock premium advisory support, farm reporting, and live intelligence. Paid plans use Paystack checkout and activate on successful verification.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -171,17 +171,17 @@ export default function MembershipPageClient({ selectedPlanCode }) {
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Plans</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
-                Membership access for farmers and buyers
+                Membership access for farmers
               </h2>
             </div>
             {!session?.token ? (
-              <p className="text-sm text-slate-500">Create an account first, then choose a plan.</p>
+              <p className="text-sm text-slate-500">Create a farmer account first, then choose a plan.</p>
             ) : null}
           </div>
 
           {loading.page ? (
-            <div className="mt-8 grid gap-6 lg:grid-cols-3">
-              {Array.from({ length: 3 }).map((_, index) => (
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+              {Array.from({ length: 2 }).map((_, index) => (
                 <div key={index} className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-sm">
                   <div className="h-6 w-32 animate-pulse rounded bg-slate-200" />
                   <div className="mt-4 h-8 w-40 animate-pulse rounded bg-slate-100" />
@@ -192,7 +192,7 @@ export default function MembershipPageClient({ selectedPlanCode }) {
           ) : null}
 
           {!loading.page ? (
-            <div className="mt-8 grid gap-6 lg:grid-cols-3">
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
               {plans.map((plan) => {
                 const isHighlighted = highlightedPlan === plan.code;
                 const isCurrent = membershipData.currentMembership?.plan_id === plan.id;
@@ -263,7 +263,7 @@ export default function MembershipPageClient({ selectedPlanCode }) {
                         }`}
                         href="/signup"
                       >
-                        Create account to subscribe
+                        Create farmer account
                       </Link>
                     )}
                   </article>

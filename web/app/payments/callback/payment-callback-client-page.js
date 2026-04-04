@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiRequest, getStoredSession } from "../../../lib/api";
 
-export default function PaymentCallbackClientPage({ reference }) {
+export default function PaymentCallbackClientPage({ reference, guestCheckoutToken }) {
   const [status, setStatus] = useState("loading");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -18,9 +18,9 @@ export default function PaymentCallbackClientPage({ reference }) {
       return;
     }
 
-    if (!session?.token) {
+    if (!session?.token && !guestCheckoutToken) {
       setStatus("error");
-      setError("Login is required to verify this payment.");
+      setError("Login is required to verify this payment, unless you are returning from guest checkout.");
       return;
     }
 
@@ -28,8 +28,11 @@ export default function PaymentCallbackClientPage({ reference }) {
 
     async function verifyPayment() {
       try {
-        const response = await apiRequest(`/payments/verify/${reference}`, {
-          token: session.token
+        const querySuffix = guestCheckoutToken
+          ? `?guestCheckoutToken=${encodeURIComponent(guestCheckoutToken)}`
+          : "";
+        const response = await apiRequest(`/payments/verify/${reference}${querySuffix}`, {
+          token: session?.token
         });
 
         if (!active) {
@@ -53,7 +56,7 @@ export default function PaymentCallbackClientPage({ reference }) {
     return () => {
       active = false;
     };
-  }, [reference]);
+  }, [guestCheckoutToken, reference]);
 
   return (
     <main className="min-h-screen bg-lime-50 px-6 py-10 text-slate-900 lg:px-8">
@@ -71,7 +74,8 @@ export default function PaymentCallbackClientPage({ reference }) {
           <div className="mt-6 rounded-[28px] border border-emerald-200 bg-emerald-50 p-6">
             <p className="text-lg font-semibold text-emerald-800">Payment successful</p>
             <p className="mt-3 text-sm leading-7 text-emerald-700">
-              Your payment was verified successfully for order #{result?.payment?.order_id}. The buyer dashboard will show the updated payment status.
+              Your payment was verified successfully for order #{result?.payment?.order_id}.
+              {guestCheckoutToken ? " The seller can now continue processing your order." : " The buyer dashboard will show the updated payment status."}
             </p>
           </div>
         ) : null}
@@ -95,9 +99,9 @@ export default function PaymentCallbackClientPage({ reference }) {
         <div className="mt-8 flex flex-wrap gap-3">
           <Link
             className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-            href="/buyer"
+            href={guestCheckoutToken ? "/" : "/buyer"}
           >
-            Go to buyer dashboard
+            {guestCheckoutToken ? "Return to marketplace" : "Go to buyer dashboard"}
           </Link>
           <Link
             className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"

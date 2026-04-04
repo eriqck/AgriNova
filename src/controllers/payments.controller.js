@@ -7,8 +7,20 @@ function buildPlaceholderReference(orderId) {
   return `PAY-${orderId}-${Date.now()}`;
 }
 
+function isPrivilegedUser(reqUser, order) {
+  if (!reqUser) {
+    return false;
+  }
+
+  if (reqUser.role === "ADMIN") {
+    return true;
+  }
+
+  return Number(reqUser.id) === Number(order.buyer_id);
+}
+
 export async function initializePayment(req, res) {
-  const { orderId, provider = "PAYSTACK", metadata, callbackUrl } = req.body;
+  const { orderId, provider = "PAYSTACK", metadata, callbackUrl, guestCheckoutToken } = req.body;
 
   if (!orderId) {
     return res.status(400).json({
@@ -20,6 +32,8 @@ export async function initializePayment(req, res) {
     `SELECT
       o.id,
       o.buyer_id,
+      o.guest_email,
+      o.guest_checkout_token,
       o.total_amount,
       o.currency,
       o.status,
@@ -45,17 +59,26 @@ export async function initializePayment(req, res) {
     return res.status(400).json({ message: "Only PAYSTACK is supported in this version." });
   }
 
-  if (!order.buyer_email) {
-    return res.status(400).json({ message: "Buyer email is required for Paystack payments." });
+  const allowedAsUser = isPrivilegedUser(req.user, order);
+  const allowedAsGuest =
+    !req.user &&
+    guestCheckoutToken &&
+    order.guest_checkout_token &&
+    guestCheckoutToken === order.guest_checkout_token;
+
+  if (!allowedAsUser && !allowedAsGuest) {
+    return res.status(403).json({ message: "You can only initialize payment for your own order." });
   }
 
-  if (req.user?.role !== "ADMIN" && Number(req.user?.id) !== Number(order.buyer_id)) {
-    return res.status(403).json({ message: "You can only initialize payment for your own order." });
+  const checkoutEmail = order.guest_email || order.buyer_email;
+
+  if (!checkoutEmail) {
+    return res.status(400).json({ message: "Buyer email is required for Paystack payments." });
   }
 
   const providerReference = buildPlaceholderReference(orderId);
   const paystackResponse = await initializeTransaction({
-    email: order.buyer_email,
+    email: checkoutEmail,
     amount: order.total_amount,
     currency: order.currency,
     reference: providerReference,
@@ -122,10 +145,35 @@ export async function updatePaymentStatus(req, res) {
 }
 
 export async function verifyPaystackPayment(req, res) {
-  const reference = req.params.reference || req.body.reference;
+  const reference = req.params.reference || req.body?.reference;
+  const guestCheckoutToken = req.query.guestCheckoutToken || req.body?.guestCheckoutToken;
 
   if (!reference) {
     return res.status(400).json({ message: "reference is required." });
+  }
+
+  const [existingPaymentRows] = await pool.execute(
+    `SELECT p.*, o.buyer_id, o.guest_checkout_token
+     FROM payments p
+     JOIN orders o ON o.id = p.order_id
+     WHERE p.provider = 'PAYSTACK' AND p.provider_reference = ?`,
+    [reference]
+  );
+
+  if (!existingPaymentRows.length) {
+    return res.status(404).json({ message: "Payment not found for reference." });
+  }
+
+  const existingPayment = existingPaymentRows[0];
+  const allowedAsUser = isPrivilegedUser(req.user, existingPayment);
+  const allowedAsGuest =
+    !req.user &&
+    guestCheckoutToken &&
+    existingPayment.guest_checkout_token &&
+    guestCheckoutToken === existingPayment.guest_checkout_token;
+
+  if (!allowedAsUser && !allowedAsGuest) {
+    return res.status(403).json({ message: "You can only verify your own payment." });
   }
 
   const paystackResponse = await verifyTransaction(reference);
@@ -152,20 +200,20 @@ export async function verifyPaystackPayment(req, res) {
   );
 
   const [paymentRows] = await pool.execute(
-    "SELECT * FROM payments WHERE provider = 'PAYSTACK' AND provider_reference = ?",
+    `SELECT p.*, o.buyer_id, o.guest_checkout_token
+     FROM payments p
+     JOIN orders o ON o.id = p.order_id
+     WHERE p.provider = 'PAYSTACK' AND p.provider_reference = ?`,
     [reference]
   );
-
-  if (!paymentRows.length) {
-    return res.status(404).json({ message: "Payment not found for reference." });
-  }
+  const payment = paymentRows[0];
 
   if (normalizedStatus === "SUCCESS") {
-    await pool.execute("UPDATE orders SET status = 'PAID' WHERE id = ?", [paymentRows[0].order_id]);
+    await pool.execute("UPDATE orders SET status = 'PAID' WHERE id = ?", [payment.order_id]);
   }
 
   res.json({
-    payment: paymentRows[0],
+    payment,
     paystack: paystackResponse.data
   });
 }

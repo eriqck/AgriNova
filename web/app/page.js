@@ -88,13 +88,6 @@ export default function MarketplaceLandingPage() {
       price: "KSh 1,500/mo",
       points: ["Specialist advice", "Weather updates", "Scouting notes", "Farm reports", "Expenses and income"],
       highlight: true
-    },
-    {
-      code: "BUYER_PLUS",
-      name: "Buyer Plus",
-      price: "KSh 2,500/mo",
-      points: ["Bulk sourcing", "Priority listings", "Verified supplier insights", "Order reports"],
-      highlight: false
     }
   ];
 
@@ -405,13 +398,13 @@ export default function MarketplaceLandingPage() {
         <div className="rounded-[36px] border border-slate-200 bg-white p-8 shadow-sm lg:p-12">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Membership plans</p>
-            <h3 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Subscription access for serious farmers and committed buyers.</h3>
+            <h3 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Subscription access for farmers who want deeper tools.</h3>
             <p className="mt-4 text-base leading-7 text-slate-600">
               Use recurring subscriptions to unlock premium specialist advice, local weather intelligence, and deeper farm reporting tools.
             </p>
           </div>
 
-          <div className="mt-10 grid gap-6 lg:grid-cols-3">
+          <div className="mt-10 grid gap-6 lg:grid-cols-2">
             {plans.map((plan) => (
               <div
                 key={plan.name}

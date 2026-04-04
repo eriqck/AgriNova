@@ -1,4 +1,31 @@
 import { pool } from "../config/db.js";
+import crypto from "crypto";
+
+const GUEST_BUYER_PHONE = "__guest_checkout__";
+const GUEST_BUYER_EMAIL = "guest-checkout@agrinova.local";
+const GUEST_BUYER_PASSWORD_HASH = "guest-checkout-disabled";
+
+async function ensureGuestBuyerId(connection) {
+  const [existingRows] = await connection.execute(
+    `SELECT id
+     FROM users
+     WHERE phone = ?
+     LIMIT 1`,
+    [GUEST_BUYER_PHONE]
+  );
+
+  if (existingRows.length) {
+    return existingRows[0].id;
+  }
+
+  const [result] = await connection.execute(
+    `INSERT INTO users (full_name, phone, email, password_hash, role, is_active)
+     VALUES (?, ?, ?, ?, 'BUYER', 0)`,
+    ["Guest Checkout", GUEST_BUYER_PHONE, GUEST_BUYER_EMAIL, GUEST_BUYER_PASSWORD_HASH]
+  );
+
+  return result.insertId;
+}
 
 export async function listOrders(req, res) {
   const { buyerId, sellerId } = req.query;
@@ -59,12 +86,28 @@ export async function listOrders(req, res) {
 }
 
 export async function createOrder(req, res) {
-  const { listingId, quantity, deliveryAddress, deliveryNotes } = req.body;
-  const buyerId = req.user?.role === "ADMIN" ? req.body.buyerId : req.user?.id;
+  const {
+    listingId,
+    quantity,
+    deliveryAddress,
+    deliveryNotes,
+    guestFullName,
+    guestPhone,
+    guestEmail
+  } = req.body;
+  let buyerId = req.user?.role === "ADMIN" ? req.body.buyerId : req.user?.id;
+  let resolvedGuestCheckoutToken = null;
+  let resolvedGuestFullName = null;
+  let resolvedGuestPhone = null;
+  let resolvedGuestEmail = null;
 
-  if (!listingId || !buyerId || !quantity) {
+  if (req.user && !["BUYER", "FARMER", "ADMIN"].includes(req.user.role)) {
+    return res.status(403).json({ message: "You do not have permission to place orders." });
+  }
+
+  if (!listingId || !quantity) {
     return res.status(400).json({
-      message: "listingId, buyerId, and quantity are required."
+      message: "listingId and quantity are required."
     });
   }
 
@@ -72,6 +115,21 @@ export async function createOrder(req, res) {
 
   try {
     await connection.beginTransaction();
+
+    if (!buyerId) {
+      if (!guestFullName || !guestPhone || !guestEmail) {
+        await connection.rollback();
+        return res.status(400).json({
+          message: "guestFullName, guestPhone, and guestEmail are required for guest checkout."
+        });
+      }
+
+      buyerId = await ensureGuestBuyerId(connection);
+      resolvedGuestCheckoutToken = crypto.randomUUID();
+      resolvedGuestFullName = guestFullName;
+      resolvedGuestPhone = guestPhone;
+      resolvedGuestEmail = guestEmail;
+    }
 
     const [listingRows] = await connection.execute(
       `SELECT id, farmer_id, quantity_available, unit, price_per_unit, minimum_order_quantity, status
@@ -119,11 +177,15 @@ export async function createOrder(req, res) {
 
     const [orderResult] = await connection.execute(
       `INSERT INTO orders
-        (listing_id, buyer_id, seller_id, quantity, unit, unit_price, total_amount, delivery_address, delivery_notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (listing_id, buyer_id, guest_full_name, guest_phone, guest_email, guest_checkout_token, seller_id, quantity, unit, unit_price, total_amount, delivery_address, delivery_notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         listingId,
         buyerId,
+        resolvedGuestFullName,
+        resolvedGuestPhone,
+        resolvedGuestEmail,
+        resolvedGuestCheckoutToken,
         listing.farmer_id,
         quantity,
         listing.unit,
@@ -146,7 +208,10 @@ export async function createOrder(req, res) {
     await connection.commit();
 
     const [orderRows] = await pool.execute("SELECT * FROM orders WHERE id = ?", [orderResult.insertId]);
-    res.status(201).json(orderRows[0]);
+    res.status(201).json({
+      ...orderRows[0],
+      guest_checkout_token: resolvedGuestCheckoutToken
+    });
   } catch (error) {
     await connection.rollback();
     throw error;

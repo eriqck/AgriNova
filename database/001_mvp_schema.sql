@@ -165,6 +165,10 @@ CREATE TABLE IF NOT EXISTS orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   listing_id BIGINT UNSIGNED NOT NULL,
   buyer_id BIGINT UNSIGNED NOT NULL,
+  guest_full_name VARCHAR(120) NULL,
+  guest_phone VARCHAR(20) NULL,
+  guest_email VARCHAR(160) NULL,
+  guest_checkout_token VARCHAR(120) NULL,
   seller_id BIGINT UNSIGNED NOT NULL,
   quantity DECIMAL(12,2) NOT NULL,
   unit VARCHAR(30) NOT NULL,
@@ -181,6 +185,7 @@ CREATE TABLE IF NOT EXISTS orders (
   KEY idx_orders_buyer (buyer_id),
   KEY idx_orders_seller (seller_id),
   KEY idx_orders_status (status),
+  UNIQUE KEY uq_orders_guest_checkout_token (guest_checkout_token),
   CONSTRAINT fk_orders_listing
     FOREIGN KEY (listing_id) REFERENCES listings (id)
     ON DELETE RESTRICT,
@@ -273,17 +278,6 @@ VALUES
     'Premium farmer toolkit with weather intelligence and advisory support.',
     JSON_ARRAY('Specialist advice', 'Weather updates', 'Scouting notes', 'Farm reports', 'Expenses and income'),
     2
-  ),
-  (
-    'BUYER_PLUS',
-    'Buyer Plus',
-    'BUYER',
-    'MONTHLY',
-    2500.00,
-    'KES',
-    'Priority sourcing and reporting tools for serious buyers.',
-    JSON_ARRAY('Bulk sourcing', 'Priority listings', 'Verified supplier insights', 'Order reports'),
-    3
   )
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),

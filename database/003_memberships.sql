@@ -84,17 +84,6 @@ VALUES
     'Premium farmer toolkit with weather intelligence and advisory support.',
     JSON_ARRAY('Specialist advice', 'Weather updates', 'Scouting notes', 'Farm reports', 'Expenses and income'),
     2
-  ),
-  (
-    'BUYER_PLUS',
-    'Buyer Plus',
-    'BUYER',
-    'MONTHLY',
-    2500.00,
-    'KES',
-    'Priority sourcing and reporting tools for serious buyers.',
-    JSON_ARRAY('Bulk sourcing', 'Priority listings', 'Verified supplier insights', 'Order reports'),
-    3
   )
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),

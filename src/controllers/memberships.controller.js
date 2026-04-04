@@ -55,11 +55,7 @@ function canSubscribeToPlan(userRole, audience) {
     return true;
   }
 
-  if (userRole === audience) {
-    return true;
-  }
-
-  return userRole === "FARMER" && audience === "BUYER";
+  return userRole === audience;
 }
 
 async function getMembershipById(membershipId) {
