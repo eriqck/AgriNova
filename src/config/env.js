@@ -14,5 +14,7 @@ export const env = {
   paystackSecretKey: process.env.PAYSTACK_SECRET_KEY || "",
   paystackPublicKey: process.env.PAYSTACK_PUBLIC_KEY || "",
   paystackCallbackUrl: process.env.PAYSTACK_CALLBACK_URL || "",
-  paystackBaseUrl: process.env.PAYSTACK_BASE_URL || "https://api.paystack.co"
+  paystackBaseUrl: process.env.PAYSTACK_BASE_URL || "https://api.paystack.co",
+  openMeteoBaseUrl: process.env.OPEN_METEO_BASE_URL || "https://api.open-meteo.com/v1",
+  thingspeakBaseUrl: process.env.THINGSPEAK_BASE_URL || "https://api.thingspeak.com"
 };

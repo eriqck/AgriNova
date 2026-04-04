@@ -1,7 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest, downloadApiFile } from "../../lib/api";
+
+const ProFieldMap = dynamic(() => import("./pro-field-map"), {
+  ssr: false
+});
 
 const sectionItems = [
   { id: "map", label: "Map View", short: "Map" },
@@ -21,6 +26,11 @@ const emptyDashboard = {
     reportCount: 0
   },
   fields: [],
+  weather: {
+    current: null,
+    forecast: [],
+    availableFields: []
+  },
   sensors: [],
   sensorSummary: [],
   microbiome: {
@@ -52,6 +62,17 @@ export default function ProFarmerSuite({ farmerName, farmName, membershipName, t
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busyKey, setBusyKey] = useState("");
+  const [sensorForm, setSensorForm] = useState({
+    provider: "AGRINOVA_DIRECT",
+    zoneName: "",
+    channelId: "",
+    readApiKey: "",
+    temperatureField: "field1",
+    moistureField: "field2",
+    ecField: "field3",
+    phField: "field4",
+    batteryField: "field5"
+  });
 
   async function loadDashboard() {
     if (!token) {
@@ -164,6 +185,50 @@ export default function ProFarmerSuite({ farmerName, farmName, membershipName, t
   const primarySensor = dashboard.sensors[0] || null;
   const fieldData = dashboard.fields;
   const microbiome = dashboard.microbiome;
+
+  useEffect(() => {
+    if (!primarySensor) {
+      return;
+    }
+
+    setSensorForm({
+      provider: primarySensor.provider || "AGRINOVA_DIRECT",
+      zoneName: primarySensor.zoneName || "",
+      channelId: primarySensor.providerConfig?.channelId || primarySensor.externalDeviceId || "",
+      readApiKey: primarySensor.providerConfig?.readApiKey || "",
+      temperatureField: primarySensor.providerConfig?.fieldMap?.temperature || "field1",
+      moistureField: primarySensor.providerConfig?.fieldMap?.moisture || "field2",
+      ecField: primarySensor.providerConfig?.fieldMap?.ec || "field3",
+      phField: primarySensor.providerConfig?.fieldMap?.ph || "field4",
+      batteryField: primarySensor.providerConfig?.fieldMap?.battery || "field5"
+    });
+  }, [primarySensor]);
+
+  async function handleSensorSave(event) {
+    event.preventDefault();
+
+    if (!primarySensor) {
+      return;
+    }
+
+    setBusyKey(`sensor-${primarySensor.id}`);
+    setMessage("");
+    setError("");
+
+    try {
+      await apiRequest(`/pro-farmer/sensors/${primarySensor.id}`, {
+        method: "PATCH",
+        token,
+        body: sensorForm
+      });
+      setMessage("Sensor provider settings saved.");
+      await loadDashboard();
+    } catch (actionError) {
+      setError(actionError.message);
+    } finally {
+      setBusyKey("");
+    }
+  }
 
   return (
     <section className="mt-8 overflow-hidden rounded-[36px] border border-emerald-100 bg-[#f5f7ef] shadow-2xl shadow-emerald-100/50">
@@ -288,10 +353,19 @@ export default function ProFarmerSuite({ farmerName, farmName, membershipName, t
                   averageHealth={dashboard.summary.avgHealth}
                   fieldData={fieldData}
                   totalAcres={dashboard.summary.totalAcres}
+                  weather={dashboard.weather}
                 />
               ) : null}
               {activeSection === "sensors" ? (
-                <SensorsSection primarySensor={primarySensor} sensorSummaries={dashboard.sensorSummary} sensors={dashboard.sensors} />
+                <SensorsSection
+                  busyKey={busyKey}
+                  onSensorSave={handleSensorSave}
+                  primarySensor={primarySensor}
+                  sensorForm={sensorForm}
+                  sensorSummaries={dashboard.sensorSummary}
+                  sensors={dashboard.sensors}
+                  setSensorForm={setSensorForm}
+                />
               ) : null}
               {activeSection === "microbiome" ? <MicrobiomeSection microbiome={microbiome} /> : null}
               {activeSection === "recommendations" ? (
@@ -326,20 +400,17 @@ export default function ProFarmerSuite({ farmerName, farmName, membershipName, t
   );
 }
 
-function MapSection({ fieldData, averageHealth, totalAcres }) {
-  const positions = [
-    "left-[16%] top-[68%]",
-    "left-[43%] top-[52%]",
-    "left-[60%] top-[30%]",
-    "left-[75%] top-[70%]"
-  ];
+function MapSection({ fieldData, averageHealth, totalAcres, weather }) {
+  const currentWeather = weather?.current || null;
+  const forecast = weather?.forecast || [];
+  const mappedFields = fieldData.filter((field) => field.latitude !== null && field.longitude !== null);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.12fr_0.88fr]">
       <div className="overflow-hidden rounded-[32px] border border-emerald-100 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-emerald-100 px-5 py-4">
           <div className="flex flex-wrap gap-3">
-            {["Standard", "Satellite", "Terrain"].map((layer, index) => (
+            {["Standard", "Live tiles", "Field view"].map((layer, index) => (
               <button
                 key={layer}
                 className={`rounded-full px-4 py-2 text-sm font-semibold ${index === 0 ? "bg-emerald-700 text-white" : "bg-[#f4f7ef] text-slate-600"}`}
@@ -355,40 +426,8 @@ function MapSection({ fieldData, averageHealth, totalAcres }) {
         </div>
 
         <div className="p-4">
-          <div className="relative min-h-[470px] overflow-hidden rounded-[28px] border border-emerald-100 bg-[radial-gradient(circle_at_20%_20%,rgba(186,214,176,0.38),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(214,226,194,0.42),transparent_28%),linear-gradient(135deg,#ecf3df,#f8fbf3)]">
-            <div className="absolute left-5 top-5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-lg shadow-slate-200/60">
-              Farm Field Overview
-            </div>
-            <div className="absolute right-5 top-5 flex flex-col gap-3">
-              {["+", "-", "↗"].map((item) => (
-                <button key={item} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg font-semibold text-slate-700 shadow-lg shadow-slate-200/60" type="button">
-                  {item}
-                </button>
-              ))}
-            </div>
-
-            {fieldData.map((field, index) => (
-              <div key={field.id} className={`absolute ${positions[index] || positions[index % positions.length]}`}>
-                <div className="rounded-[20px] border border-emerald-200 bg-emerald-700/90 px-3 py-2 text-xs font-semibold text-white shadow-xl shadow-emerald-700/20">
-                  <div>{field.name}</div>
-                  <div className="mt-1 text-[11px] text-emerald-100">{field.crop}</div>
-                </div>
-              </div>
-            ))}
-
-            <div className="absolute bottom-5 left-5 rounded-[24px] bg-white px-4 py-4 shadow-lg shadow-slate-200/60">
-              <p className="text-sm font-semibold text-slate-700">Soil Health Index</p>
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-500">
-                <LegendDot color="bg-emerald-700" label="Excellent (80+)" />
-                <LegendDot color="bg-lime-400" label="Good (65-79)" />
-                <LegendDot color="bg-amber-400" label="Fair (50-64)" />
-                <LegendDot color="bg-rose-500" label="Poor (<50)" />
-              </div>
-            </div>
-
-            <div className="absolute bottom-5 right-5 rounded-full bg-white px-5 py-3 text-xs text-slate-500 shadow-lg shadow-slate-200/60">
-              0m    500m    1km
-            </div>
+          <div className="overflow-hidden rounded-[28px] border border-emerald-100">
+            <ProFieldMap fields={fieldData} />
           </div>
         </div>
       </div>
@@ -402,8 +441,46 @@ function MapSection({ fieldData, averageHealth, totalAcres }) {
 
         <div className="rounded-[32px] border border-emerald-100 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
+            <h3 className="text-2xl font-semibold tracking-tight text-slate-950">Live Weather</h3>
+            <span className="text-sm text-slate-500">{currentWeather?.fieldName || "No coordinates yet"}</span>
+          </div>
+          {currentWeather ? (
+            <>
+              <div className="mt-4 rounded-[24px] bg-[#eef3e7] p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{currentWeather.summaryLabel}</p>
+                <p className="mt-2 text-3xl font-semibold text-slate-950">{currentWeather.currentTemperatureC}°C</p>
+                <p className="mt-2 text-sm text-slate-600">
+                  Rain {currentWeather.rainMm} mm · Precipitation {currentWeather.precipitationProbabilityPct}% · Wind {currentWeather.windSpeedKph} km/h
+                </p>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {forecast.slice(0, 3).map((day) => (
+                  <div key={day.date} className="rounded-[20px] border border-slate-200 bg-[#fafcf7] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{formatDate(day.date)}</p>
+                        <p className="text-sm text-slate-500">{day.label}</p>
+                      </div>
+                      <div className="text-right text-sm text-slate-600">
+                        <p>{day.maxTemperatureC}° / {day.minTemperatureC}°</p>
+                        <p>{day.precipitationProbabilityPct}% rain chance</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="mt-4 text-sm leading-7 text-slate-600">
+              Add farm latitude and longitude to fetch live Open-Meteo weather forecasts for your fields.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-[32px] border border-emerald-100 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="text-2xl font-semibold tracking-tight text-slate-950">All Fields</h3>
-            <span className="text-sm text-slate-500">{fieldData.length} total</span>
+            <span className="text-sm text-slate-500">{mappedFields.length}/{fieldData.length} mapped</span>
           </div>
           <div className="mt-5 space-y-4">
             {fieldData.map((field) => (
@@ -419,7 +496,7 @@ function MapSection({ fieldData, averageHealth, totalAcres }) {
                   <div className="h-2.5 rounded-full bg-emerald-700" style={{ width: `${field.health}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                  <span>{field.soil}</span>
+                  <span>{field.latitude !== null && field.longitude !== null ? `${Number(field.latitude).toFixed(4)}, ${Number(field.longitude).toFixed(4)}` : "Coordinates needed"}</span>
                   <span>{field.health}</span>
                 </div>
               </div>
@@ -431,7 +508,7 @@ function MapSection({ fieldData, averageHealth, totalAcres }) {
   );
 }
 
-function SensorsSection({ sensorSummaries, sensors, primarySensor }) {
+function SensorsSection({ sensorSummaries, sensors, primarySensor, sensorForm, setSensorForm, onSensorSave, busyKey }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -463,7 +540,7 @@ function SensorsSection({ sensorSummaries, sensors, primarySensor }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{primarySensor.fieldName} - {primarySensor.zoneName}</h3>
-                <p className="mt-2 text-sm text-slate-500">{primarySensor.sensorType} · Updated {primarySensor.lastSeenMinutes} min ago</p>
+                <p className="mt-2 text-sm text-slate-500">{primarySensor.sensorType} · Updated {primarySensor.lastSeenMinutes} min ago · {primarySensor.provider}</p>
               </div>
               <span className={`rounded-full px-4 py-2 text-sm font-semibold ${primarySensor.status === "online" ? "bg-emerald-100 text-emerald-700" : primarySensor.status === "warning" ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"}`}>
                 {primarySensor.status}
@@ -471,10 +548,10 @@ function SensorsSection({ sensorSummaries, sensors, primarySensor }) {
             </div>
 
             <div className="mt-6 grid gap-4 rounded-[28px] bg-[#f2f6ec] p-5 sm:grid-cols-4">
-              <StatPanel label="Temperature" value={`${primarySensor.temperature}°C`} />
-              <StatPanel label="Moisture" value={`${primarySensor.moisture}%`} />
-              <StatPanel label="EC" value={`${primarySensor.ec} dS/m`} />
-              <StatPanel label="pH" value={`${primarySensor.ph}`} />
+              <StatPanel label="Temperature" value={primarySensor.temperature ? `${primarySensor.temperature}°C` : "--"} />
+              <StatPanel label="Moisture" value={primarySensor.moisture ? `${primarySensor.moisture}%` : "--"} />
+              <StatPanel label="EC" value={primarySensor.ec ? `${primarySensor.ec} dS/m` : "--"} />
+              <StatPanel label="pH" value={primarySensor.ph ? `${primarySensor.ph}` : "--"} />
             </div>
 
             <div className="mt-8">
@@ -486,6 +563,83 @@ function SensorsSection({ sensorSummaries, sensors, primarySensor }) {
                 <div className="h-3 rounded-full bg-emerald-700" style={{ width: `${primarySensor.batteryLevel}%` }} />
               </div>
             </div>
+
+            <form className="mt-8 grid gap-4 rounded-[28px] border border-slate-200 bg-[#fafcf7] p-5" onSubmit={onSensorSave}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-600">Provider</span>
+                  <select
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500"
+                    onChange={(event) => setSensorForm((current) => ({ ...current, provider: event.target.value }))}
+                    value={sensorForm.provider}
+                  >
+                    <option value="AGRINOVA_DIRECT">AgriNova direct device</option>
+                    <option value="THINGSPEAK">ThingSpeak channel</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-600">Zone name</span>
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500"
+                    onChange={(event) => setSensorForm((current) => ({ ...current, zoneName: event.target.value }))}
+                    value={sensorForm.zoneName}
+                  />
+                </label>
+              </div>
+
+              {sensorForm.provider === "THINGSPEAK" ? (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">ThingSpeak channel ID</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, channelId: event.target.value }))} value={sensorForm.channelId} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Read API key</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, readApiKey: event.target.value }))} value={sensorForm.readApiKey} />
+                    </label>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Temperature field</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, temperatureField: event.target.value }))} value={sensorForm.temperatureField} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Moisture field</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, moistureField: event.target.value }))} value={sensorForm.moistureField} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">EC field</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, ecField: event.target.value }))} value={sensorForm.ecField} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">pH field</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, phField: event.target.value }))} value={sensorForm.phField} />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-slate-600">Battery field</span>
+                      <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setSensorForm((current) => ({ ...current, batteryField: event.target.value }))} value={sensorForm.batteryField} />
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-[24px] border border-emerald-100 bg-[#eef3e7] p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-950">Direct ingestion token</p>
+                  <p className="mt-2 break-all font-mono text-xs">{primarySensor.ingestToken || "Token will be generated on save."}</p>
+                  <p className="mt-3 text-xs leading-6 text-slate-600">
+                    Devices can POST JSON to `/api/v1/pro-farmer/sensors/ingest` with `x-sensor-token`, `temperatureC`, `moisturePct`, `ecDsm`, `ph`, and optional `batteryLevel`.
+                  </p>
+                </div>
+              )}
+
+              <button
+                className="w-fit rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60"
+                disabled={busyKey === `sensor-${primarySensor.id}`}
+                type="submit"
+              >
+                {busyKey === `sensor-${primarySensor.id}` ? "Saving..." : "Save sensor setup"}
+              </button>
+            </form>
           </div>
         ) : null}
       </div>

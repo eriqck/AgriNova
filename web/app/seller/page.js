@@ -20,7 +20,9 @@ const initialFarm = {
   subCounty: "",
   village: "",
   acreage: "",
-  soilType: ""
+  soilType: "",
+  latitude: "",
+  longitude: ""
 };
 
 const initialListing = {
@@ -121,7 +123,9 @@ export default function SellerPage() {
         token: session.token,
         body: {
           ...farmForm,
-          acreage: farmForm.acreage ? Number(farmForm.acreage) : null
+          acreage: farmForm.acreage ? Number(farmForm.acreage) : null,
+          latitude: farmForm.latitude ? Number(farmForm.latitude) : null,
+          longitude: farmForm.longitude ? Number(farmForm.longitude) : null
         }
       });
       setFarmForm(initialFarm);
@@ -179,6 +183,28 @@ export default function SellerPage() {
   function handleLogout() {
     clearSession();
     router.push("/login");
+  }
+
+  function useCurrentLocation() {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setError("Geolocation is not available in this browser.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFarmForm((current) => ({
+          ...current,
+          latitude: String(position.coords.latitude.toFixed(6)),
+          longitude: String(position.coords.longitude.toFixed(6))
+        }));
+        setMessage("Current coordinates added to the farm form.");
+        setError("");
+      },
+      () => {
+        setError("We could not read your current location. You can still enter coordinates manually.");
+      }
+    );
   }
 
   return (
@@ -355,8 +381,19 @@ export default function SellerPage() {
                 <span className="mb-2 block text-sm font-medium text-slate-600">Soil type</span>
                 <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setFarmForm((current) => ({ ...current, soilType: event.target.value }))} value={farmForm.soilType} />
               </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-600">Latitude</span>
+                <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setFarmForm((current) => ({ ...current, latitude: event.target.value }))} step="any" type="number" value={farmForm.latitude} />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-600">Longitude</span>
+                <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setFarmForm((current) => ({ ...current, longitude: event.target.value }))} step="any" type="number" value={farmForm.longitude} />
+              </label>
             </div>
 
+                <button className="mt-4 rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50" onClick={useCurrentLocation} type="button">
+                  Use current location
+                </button>
                 <button className="mt-6 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={loading.farm} type="submit">
                   {loading.farm ? "Saving workspace..." : "Save workspace"}
                 </button>

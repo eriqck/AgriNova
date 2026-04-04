@@ -1,4 +1,7 @@
+import crypto from "node:crypto";
 import { pool } from "../config/db.js";
+import { fetchThingSpeakLatestReading } from "../services/sensor-provider.service.js";
+import { fetchFarmWeather } from "../services/weather.service.js";
 
 const healthTemplate = [78, 82, 65, 71, 76, 80];
 const organicTemplate = [3.8, 4.1, 2.9, 3.4, 3.7, 4.0];
@@ -6,6 +9,10 @@ const moistureTemplate = [24, 26, 22, 25, 23, 24];
 const batteryTemplate = [87, 92, 65, 58, 84, 73];
 const sensorStatusTemplate = ["online", "online", "warning", "online", "offline", "online"];
 const cropFallbacks = ["Corn", "Soybeans", "Wheat", "Cotton", "Tomatoes", "Avocados"];
+
+function generateIngestToken() {
+  return crypto.randomBytes(18).toString("hex");
+}
 
 function toNumber(value, fallback = 0) {
   const number = Number(value);
@@ -263,7 +270,7 @@ async function ensureSensorData(userId, farms) {
   }
 
   const [devices] = await pool.execute(
-    `SELECT id, farm_id
+    `SELECT id, farm_id, ingest_token
      FROM pro_sensor_devices
      WHERE user_id = ?`,
     [userId]
@@ -273,62 +280,30 @@ async function ensureSensorData(userId, farms) {
 
   for (const [index, farm] of farms.entries()) {
     if (!deviceByFarmId.has(Number(farm.id))) {
-      const [result] = await pool.execute(
+      await pool.execute(
         `INSERT INTO pro_sensor_devices
-          (user_id, farm_id, zone_name, sensor_type, status, battery_level, last_seen_at)
-         VALUES (?, ?, ?, 'Multi-Sensor', ?, ?, DATE_SUB(NOW(), INTERVAL ? MINUTE))`,
+          (user_id, farm_id, zone_name, sensor_type, provider, status, battery_level, ingest_token)
+         VALUES (?, ?, ?, 'Multi-Sensor', 'AGRINOVA_DIRECT', 'offline', ?, ?)`,
         [
           userId,
           farm.id,
           "Zone A",
-          sensorStatusTemplate[index % sensorStatusTemplate.length],
           batteryTemplate[index % batteryTemplate.length],
-          [2, 1, 5, 9, 4, 3][index % 6]
+          generateIngestToken()
         ]
       );
-
-      deviceByFarmId.set(Number(farm.id), {
-        id: result.insertId,
-        farm_id: farm.id
-      });
     }
   }
 
-  const deviceIds = Array.from(deviceByFarmId.values()).map((device) => device.id);
-
-  if (!deviceIds.length) {
-    return;
-  }
-
-  const placeholders = deviceIds.map(() => "?").join(", ");
-  const [readingRows] = await pool.execute(
-    `SELECT device_id, COUNT(*) AS total
-     FROM pro_sensor_readings
-     WHERE device_id IN (${placeholders})
-     GROUP BY device_id`,
-    deviceIds
-  );
-
-  const countsByDevice = new Map(readingRows.map((row) => [Number(row.device_id), Number(row.total)]));
-
-  for (const [index, device] of Array.from(deviceByFarmId.values()).entries()) {
-    if (countsByDevice.get(Number(device.id))) {
-      continue;
+  for (const device of devices) {
+    if (!device.ingest_token) {
+      await pool.execute(
+        `UPDATE pro_sensor_devices
+         SET ingest_token = COALESCE(ingest_token, ?)
+         WHERE id = ?`,
+        [generateIngestToken(), device.id]
+      );
     }
-
-    await pool.execute(
-      `INSERT INTO pro_sensor_readings
-        (device_id, temperature_c, moisture_pct, ec_dsm, ph, recorded_at)
-       VALUES (?, ?, ?, ?, ?, DATE_SUB(NOW(), INTERVAL ? MINUTE))`,
-      [
-        device.id,
-        round(18.4 + index * 0.2, 1),
-        round(24.1 + index * 0.6, 1),
-        round(1.6 + index * 0.1, 1),
-        round(6.6 + index * 0.1, 1),
-        [2, 1, 5, 9, 4, 3][index % 6]
-      ]
-    );
   }
 }
 
@@ -495,6 +470,194 @@ async function ensureProFarmerData(userId) {
   await ensureReportData(userId, farms.length, Number(sampleCountRows[0]?.total || 0));
 }
 
+function parseJsonConfig(rawConfig) {
+  if (!rawConfig) {
+    return {};
+  }
+
+  if (typeof rawConfig === "object") {
+    return rawConfig;
+  }
+
+  try {
+    return JSON.parse(rawConfig);
+  } catch {
+    return {};
+  }
+}
+
+async function upsertSensorReading(deviceId, reading) {
+  if (
+    reading.temperatureC === null ||
+    reading.moisturePct === null ||
+    reading.ecDsm === null ||
+    reading.ph === null
+  ) {
+    return;
+  }
+
+  const recordedAt = reading.recordedAt ? new Date(reading.recordedAt) : new Date();
+  const [existingRows] = await pool.execute(
+    `SELECT id
+     FROM pro_sensor_readings
+     WHERE device_id = ? AND recorded_at = ?
+     LIMIT 1`,
+    [deviceId, recordedAt]
+  );
+
+  if (!existingRows.length) {
+    await pool.execute(
+      `INSERT INTO pro_sensor_readings
+        (device_id, temperature_c, moisture_pct, ec_dsm, ph, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [deviceId, reading.temperatureC, reading.moisturePct, reading.ecDsm, reading.ph, recordedAt]
+    );
+  }
+
+  await pool.execute(
+    `UPDATE pro_sensor_devices
+     SET battery_level = COALESCE(?, battery_level),
+         status = COALESCE(?, status),
+         last_seen_at = ?,
+         last_sync_at = NOW()
+     WHERE id = ?`,
+    [reading.batteryLevel ?? null, reading.status || null, recordedAt, deviceId]
+  );
+}
+
+async function syncExternalSensorDevices(userId) {
+  const [devices] = await pool.execute(
+    `SELECT id, provider, external_device_id, provider_config
+     FROM pro_sensor_devices
+     WHERE user_id = ?`,
+    [userId]
+  );
+
+  for (const device of devices) {
+    if (device.provider !== "THINGSPEAK") {
+      continue;
+    }
+
+    try {
+      const reading = await fetchThingSpeakLatestReading({
+        ...device,
+        provider_config: parseJsonConfig(device.provider_config)
+      });
+
+      if (reading) {
+        await upsertSensorReading(device.id, reading);
+      }
+    } catch {
+      await pool.execute(
+        `UPDATE pro_sensor_devices
+         SET last_sync_at = NOW(), status = 'warning'
+         WHERE id = ?`,
+        [device.id]
+      );
+    }
+  }
+}
+
+async function refreshFarmWeather(fields) {
+  for (const field of fields) {
+    if (field.latitude === null || field.longitude === null) {
+      continue;
+    }
+
+    const [snapshotRows] = await pool.execute(
+      `SELECT id, fetched_at
+       FROM pro_weather_snapshots
+       WHERE farm_id = ?
+       LIMIT 1`,
+      [field.id]
+    );
+
+    const fetchedAt = snapshotRows[0]?.fetched_at ? new Date(snapshotRows[0].fetched_at) : null;
+    const needsRefresh = !fetchedAt || Date.now() - fetchedAt.getTime() > 30 * 60 * 1000;
+
+    if (!needsRefresh) {
+      continue;
+    }
+
+    try {
+      const weather = await fetchFarmWeather({
+        latitude: field.latitude,
+        longitude: field.longitude
+      });
+
+      await pool.execute(
+        `INSERT INTO pro_weather_snapshots
+          (farm_id, provider, summary_label, current_temperature_c, rain_mm, precipitation_probability_pct,
+           wind_speed_kph, soil_temperature_c, soil_moisture_pct, weather_code, forecast_json, fetched_at)
+         VALUES (?, 'OPEN_METEO', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           summary_label = VALUES(summary_label),
+           current_temperature_c = VALUES(current_temperature_c),
+           rain_mm = VALUES(rain_mm),
+           precipitation_probability_pct = VALUES(precipitation_probability_pct),
+           wind_speed_kph = VALUES(wind_speed_kph),
+           soil_temperature_c = VALUES(soil_temperature_c),
+           soil_moisture_pct = VALUES(soil_moisture_pct),
+           weather_code = VALUES(weather_code),
+           forecast_json = VALUES(forecast_json),
+           fetched_at = VALUES(fetched_at)`,
+        [
+          field.id,
+          weather.summaryLabel,
+          weather.currentTemperatureC,
+          weather.rainMm,
+          weather.precipitationProbabilityPct,
+          weather.windSpeedKph,
+          weather.soilTemperatureC,
+          weather.soilMoisturePct,
+          weather.weatherCode,
+          JSON.stringify(weather.forecast)
+        ]
+      );
+    } catch {
+      // Keep the previous cached weather snapshot when provider refresh fails.
+    }
+  }
+}
+
+async function getWeatherRows(userId) {
+  const [rows] = await pool.execute(
+    `SELECT
+      w.farm_id,
+      f.farm_name,
+      w.summary_label,
+      w.current_temperature_c,
+      w.rain_mm,
+      w.precipitation_probability_pct,
+      w.wind_speed_kph,
+      w.soil_temperature_c,
+      w.soil_moisture_pct,
+      w.weather_code,
+      w.forecast_json,
+      w.fetched_at
+     FROM pro_weather_snapshots w
+     JOIN farms f ON f.id = w.farm_id
+     WHERE f.farmer_id = ?
+     ORDER BY w.fetched_at DESC`,
+    [userId]
+  );
+
+  return rows.map((row) => ({
+    farmId: row.farm_id,
+    fieldName: row.farm_name,
+    summaryLabel: row.summary_label,
+    currentTemperatureC: row.current_temperature_c === null ? null : round(row.current_temperature_c, 1),
+    rainMm: row.rain_mm === null ? null : round(row.rain_mm, 1),
+    precipitationProbabilityPct: row.precipitation_probability_pct,
+    windSpeedKph: row.wind_speed_kph === null ? null : round(row.wind_speed_kph, 1),
+    soilTemperatureC: row.soil_temperature_c === null ? null : round(row.soil_temperature_c, 1),
+    soilMoisturePct: row.soil_moisture_pct === null ? null : round(row.soil_moisture_pct, 1),
+    weatherCode: row.weather_code,
+    forecast: parseJsonConfig(row.forecast_json),
+    fetchedAt: row.fetched_at
+  }));
+}
+
 async function getFieldRows(userId) {
   const [rows] = await pool.execute(
     `SELECT
@@ -544,9 +707,14 @@ async function getSensorRows(userId) {
       d.farm_id,
       d.zone_name,
       d.sensor_type,
+      d.provider,
+      d.external_device_id,
+      d.ingest_token,
+      d.provider_config,
       d.status,
       d.battery_level,
       d.last_seen_at,
+      d.last_sync_at,
       f.farm_name,
       latest.temperature_c,
       latest.moisture_pct,
@@ -577,14 +745,19 @@ async function getSensorRows(userId) {
     fieldName: row.farm_name,
     zoneName: row.zone_name,
     sensorType: row.sensor_type,
+    provider: row.provider,
+    externalDeviceId: row.external_device_id,
+    ingestToken: row.ingest_token,
+    providerConfig: parseJsonConfig(row.provider_config),
     status: row.status,
     batteryLevel: row.battery_level,
     lastSeenAt: row.last_seen_at,
+    lastSyncAt: row.last_sync_at,
     lastSeenMinutes: minutesAgo(row.last_seen_at || row.recorded_at),
-    temperature: round(row.temperature_c, 1),
-    moisture: round(row.moisture_pct, 1),
-    ec: round(row.ec_dsm, 1),
-    ph: round(row.ph, 1)
+    temperature: row.temperature_c === null ? null : round(row.temperature_c, 1),
+    moisture: row.moisture_pct === null ? null : round(row.moisture_pct, 1),
+    ec: row.ec_dsm === null ? null : round(row.ec_dsm, 1),
+    ph: row.ph === null ? null : round(row.ph, 1)
   }));
 }
 
@@ -672,11 +845,15 @@ async function getReportRows(userId) {
   return rows;
 }
 
-function buildDashboardPayload(fields, sensors, samples, recommendations, interventions, reports) {
+function buildDashboardPayload(fields, sensors, samples, recommendations, interventions, reports, weather) {
   const totalAcres = round(fields.reduce((sum, field) => sum + toNumber(field.acreage), 0), 1);
   const averageHealth = Math.round(average(fields.map((field) => field.health)));
   const onlineSensors = sensors.filter((sensor) => sensor.status === "online").length;
   const latestSample = samples[samples.length - 1] || null;
+  const currentWeather = weather[0] || null;
+  const temperatureReadings = sensors.map((sensor) => sensor.temperature).filter((value) => value !== null);
+  const moistureReadings = sensors.map((sensor) => sensor.moisture).filter((value) => value !== null);
+  const ecReadings = sensors.map((sensor) => sensor.ec).filter((value) => value !== null);
 
   const trendMap = new Map();
   samples.forEach((sample) => {
@@ -776,22 +953,27 @@ function buildDashboardPayload(fields, sensors, samples, recommendations, interv
       reportCount: reports.length
     },
     fields,
+    weather: {
+      current: currentWeather,
+      forecast: currentWeather?.forecast || [],
+      availableFields: weather
+    },
     sensors,
     sensorSummary: [
       {
         label: "Avg Temperature",
-        value: `${round(average(sensors.map((sensor) => sensor.temperature)), 1)}°C`,
-        detail: "Across all sensors"
+        value: temperatureReadings.length ? `${round(average(temperatureReadings), 1)}°C` : "--",
+        detail: temperatureReadings.length ? "Across all sensors" : "Waiting for live readings"
       },
       {
         label: "Avg Moisture",
-        value: `${round(average(sensors.map((sensor) => sensor.moisture)), 1)}%`,
-        detail: "Soil moisture content"
+        value: moistureReadings.length ? `${round(average(moistureReadings), 1)}%` : "--",
+        detail: moistureReadings.length ? "Soil moisture content" : "Waiting for live readings"
       },
       {
         label: "Avg EC",
-        value: `${round(average(sensors.map((sensor) => sensor.ec)), 1)} dS/m`,
-        detail: "Electrical conductivity"
+        value: ecReadings.length ? `${round(average(ecReadings), 1)} dS/m` : "--",
+        detail: ecReadings.length ? "Electrical conductivity" : "Waiting for live readings"
       },
       {
         label: "Active Sensors",
@@ -870,17 +1052,21 @@ function buildDashboardPayload(fields, sensors, samples, recommendations, interv
 
 async function getPreparedProFarmerData(userId) {
   await ensureProFarmerData(userId);
+  await syncExternalSensorDevices(userId);
 
-  const [fields, sensors, samples, recommendations, interventions, reports] = await Promise.all([
-    getFieldRows(userId),
+  const fields = await getFieldRows(userId);
+  await refreshFarmWeather(fields);
+
+  const [sensors, samples, recommendations, interventions, reports, weather] = await Promise.all([
     getSensorRows(userId),
     getMicrobiomeRows(userId),
     getRecommendationRows(userId),
     getInterventionRows(userId),
-    getReportRows(userId)
+    getReportRows(userId),
+    getWeatherRows(userId)
   ]);
 
-  return buildDashboardPayload(fields, sensors, samples, recommendations, interventions, reports);
+  return buildDashboardPayload(fields, sensors, samples, recommendations, interventions, reports, weather);
 }
 
 function sendCsv(res, filename, rows) {
@@ -892,6 +1078,118 @@ function sendCsv(res, filename, rows) {
 export async function getProFarmerDashboard(req, res) {
   const dashboard = await getPreparedProFarmerData(req.user.id);
   res.json(dashboard);
+}
+
+export async function updateSensorDevice(req, res) {
+  const sensorId = Number(req.params.id);
+  const {
+    provider,
+    zoneName,
+    externalDeviceId,
+    channelId,
+    readApiKey,
+    temperatureField,
+    moistureField,
+    ecField,
+    phField,
+    batteryField
+  } = req.body;
+
+  const [rows] = await pool.execute(
+    `SELECT id, provider, ingest_token
+     FROM pro_sensor_devices
+     WHERE id = ? AND user_id = ?`,
+    [sensorId, req.user.id]
+  );
+
+  if (!rows.length) {
+    return res.status(404).json({ message: "Sensor device not found." });
+  }
+
+  const nextProvider = provider === "THINGSPEAK" ? "THINGSPEAK" : "AGRINOVA_DIRECT";
+  const providerConfig =
+    nextProvider === "THINGSPEAK"
+      ? {
+          channelId: channelId || externalDeviceId || null,
+          readApiKey: readApiKey || null,
+          fieldMap: {
+            temperature: temperatureField || "field1",
+            moisture: moistureField || "field2",
+            ec: ecField || "field3",
+            ph: phField || "field4",
+            battery: batteryField || "field5"
+          }
+        }
+      : null;
+
+  await pool.execute(
+    `UPDATE pro_sensor_devices
+     SET provider = ?,
+         zone_name = COALESCE(?, zone_name),
+         external_device_id = ?,
+         provider_config = ?,
+         ingest_token = CASE
+           WHEN ? = 'AGRINOVA_DIRECT' AND ingest_token IS NULL THEN ?
+           ELSE ingest_token
+         END
+     WHERE id = ?`,
+    [
+      nextProvider,
+      zoneName || null,
+      externalDeviceId || channelId || null,
+      providerConfig ? JSON.stringify(providerConfig) : null,
+      nextProvider,
+      generateIngestToken(),
+      sensorId
+    ]
+  );
+
+  const [updatedRows] = await pool.execute(
+    `SELECT id, provider, zone_name, external_device_id, ingest_token, provider_config
+     FROM pro_sensor_devices
+     WHERE id = ?`,
+    [sensorId]
+  );
+
+  res.json({
+    sensor: {
+      ...updatedRows[0],
+      provider_config: parseJsonConfig(updatedRows[0].provider_config)
+    }
+  });
+}
+
+export async function ingestSensorReading(req, res) {
+  const token = req.headers["x-sensor-token"] || req.body.token;
+  const { temperatureC, moisturePct, ecDsm, ph, batteryLevel, status, recordedAt } = req.body;
+
+  if (!token) {
+    return res.status(401).json({ message: "Sensor token is required." });
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT id
+     FROM pro_sensor_devices
+     WHERE ingest_token = ?
+     LIMIT 1`,
+    [token]
+  );
+
+  if (!rows.length) {
+    return res.status(404).json({ message: "Sensor device not found for token." });
+  }
+
+  await upsertSensorReading(rows[0].id, {
+    temperatureC: toNumber(temperatureC, null),
+    moisturePct: toNumber(moisturePct, null),
+    ecDsm: toNumber(ecDsm, null),
+    ph: toNumber(ph, null),
+    batteryLevel: batteryLevel === undefined ? null : toNumber(batteryLevel, null),
+    status: status || "online",
+    recordedAt: recordedAt || new Date()
+  });
+
+  res.status(201).json({ received: true });
 }
 
 export async function scheduleRecommendation(req, res) {
