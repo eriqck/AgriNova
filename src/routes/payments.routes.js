@@ -10,7 +10,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = Router();
 
-router.post("/initialize", authenticate, requireRoles("BUYER", "ADMIN"), asyncHandler(initializePayment));
+router.post("/initialize", authenticate, requireRoles("BUYER", "FARMER", "ADMIN"), asyncHandler(initializePayment));
 router.get("/verify/:reference", authenticate, asyncHandler(verifyPaystackPayment));
 router.patch("/:id/status", authenticate, requireRoles("ADMIN"), asyncHandler(updatePaymentStatus));
 router.post("/webhook/paystack", asyncHandler(handlePaystackWebhook));

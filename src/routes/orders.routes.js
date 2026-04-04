@@ -11,7 +11,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 const router = Router();
 
 router.get("/", authenticate, asyncHandler(listOrders));
-router.post("/", authenticate, requireRoles("BUYER", "ADMIN"), asyncHandler(createOrder));
+router.post("/", authenticate, requireRoles("BUYER", "FARMER", "ADMIN"), asyncHandler(createOrder));
 router.get("/:id", authenticate, asyncHandler(getOrderById));
 router.patch("/:id/status", authenticate, asyncHandler(updateOrderStatus));
 

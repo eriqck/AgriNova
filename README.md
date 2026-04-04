@@ -47,6 +47,22 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 4. Start the frontend with `npm run dev`
 5. Open `http://localhost:3000`
 
+## One Command Start
+
+Run both backend and frontend together from the project root:
+
+```powershell
+npm run start:local
+```
+
+Stop both tracked processes with:
+
+```powershell
+npm run stop:local
+```
+
+Runtime logs are written to `.local-dev/`.
+
 ## Current Product Features
 
 - Farmer and buyer registration/login

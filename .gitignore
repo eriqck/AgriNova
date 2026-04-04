@@ -6,6 +6,7 @@ npm-debug.log*
 backend-dev.log
 backend-dev.err.log
 tmp-upload-test.png
+.local-dev/
 web/.env.local
 web/.next
 web/next-start.log
