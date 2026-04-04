@@ -40,7 +40,7 @@ export default function SignupPage() {
         password: form.password
       });
       saveSession(session);
-      router.push(form.role === "BUYER" ? "/buyer" : "/seller");
+      router.push("/seller");
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -54,10 +54,10 @@ export default function SignupPage() {
         <section className="rounded-[32px] bg-gradient-to-br from-emerald-950 via-emerald-900 to-lime-900 p-8 text-white shadow-2xl shadow-slate-300/30 lg:p-12">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">Create account</p>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">
-            Join as a farmer or buyer.
+            Join as a farmer.
           </h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-white/70">
-            Create your account, unlock seller tools, and start uploading produce listings with images from your device.
+            Create your farmer account, unlock seller tools, and start uploading produce listings with images from your device.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             <div className="rounded-3xl bg-white/10 p-5">
@@ -87,19 +87,10 @@ export default function SignupPage() {
           </div>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-600">Full name</span>
-                <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} value={form.fullName} />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-600">Role</span>
-                <select className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))} value={form.role}>
-                  <option value="FARMER">Farmer</option>
-                  <option value="BUYER">Buyer</option>
-                </select>
-              </label>
-            </div>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-600">Full name</span>
+              <input className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500" onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} value={form.fullName} />
+            </label>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <label className="block">

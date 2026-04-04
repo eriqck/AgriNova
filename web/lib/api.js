@@ -26,6 +26,33 @@ export async function apiRequest(path, options = {}) {
   return payload;
 }
 
+export async function downloadApiFile(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      ...(options.headers || {})
+    },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || "Download failed.");
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  const filenameMatch = disposition.match(/filename="([^"]+)"/i);
+  const filename = options.filename || filenameMatch?.[1] || "download";
+
+  return {
+    blob,
+    filename,
+    contentType: response.headers.get("content-type") || "application/octet-stream"
+  };
+}
+
 export function saveSession(session) {
   if (typeof window !== "undefined") {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));

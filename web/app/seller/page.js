@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import ProFarmerSuite from "./pro-farmer-suite";
 import {
   apiRequest,
   clearSession,
@@ -49,6 +50,9 @@ export default function SellerPage() {
   const [activeMode, setActiveModeState] = useState("");
   const canPublish = Boolean(listingForm.farmId && listingForm.productId);
   const availableModes = getAvailableModes(session?.user?.role);
+  const isProFarmer =
+    membershipData.currentMembership?.plan_code === "PRO_FARMER" &&
+    membershipData.currentMembership?.status === "ACTIVE";
 
   useEffect(() => {
     const stored = getStoredSession();
@@ -257,6 +261,38 @@ export default function SellerPage() {
             </Link>
           </div>
         </section>
+
+        {activeMode !== "BUYER" && isProFarmer ? (
+          <ProFarmerSuite
+            farmerName={session?.user?.full_name || "Farmer"}
+            farmName={farms[0]?.farm_name || "Green Valley Farms"}
+            farms={farms}
+            listings={listings}
+            membershipName={membershipData.currentMembership?.plan_name}
+            token={session?.token}
+          />
+        ) : null}
+
+        {activeMode !== "BUYER" && !isProFarmer ? (
+          <section className="mt-8 rounded-[32px] border border-emerald-100 bg-gradient-to-br from-[#eff6e8] to-white p-8 shadow-sm">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Pro farmer preview</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+              Upgrade to unlock field intelligence, sensor monitoring, microbiome analytics, and export-ready reports.
+            </h2>
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                "Interactive field map with soil health scores",
+                "Live sensor panels for temperature, moisture, EC, and pH",
+                "Microbiome insights with trends and diversity comparisons",
+                "Recommendations, interventions, and printable reports"
+              ].map((item) => (
+                <div key={item} className="rounded-[24px] border border-emerald-100 bg-white p-5 text-sm leading-7 text-slate-600 shadow-sm">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {activeMode === "BUYER" ? (
           <div className="mt-6 rounded-[28px] border border-emerald-200 bg-white p-6 shadow-sm">

@@ -7,6 +7,7 @@ import membershipPlansRoutes from "./membership-plans.routes.js";
 import membershipsRoutes from "./memberships.routes.js";
 import ordersRoutes from "./orders.routes.js";
 import paymentsRoutes from "./payments.routes.js";
+import proFarmerRoutes from "./pro-farmer.routes.js";
 import productsRoutes from "./products.routes.js";
 import usersRoutes from "./users.routes.js";
 
@@ -22,5 +23,6 @@ router.use("/listings", listingsRoutes);
 router.use("/orders", ordersRoutes);
 router.use("/payments", paymentsRoutes);
 router.use("/deliveries", deliveriesRoutes);
+router.use("/pro-farmer", proFarmerRoutes);
 
 export default router;

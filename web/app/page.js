@@ -61,16 +61,16 @@ export default function MarketplaceLandingPage() {
 
   const steps = [
     {
-      title: "Join as a farmer or buyer",
-      description: "Choose your account type and unlock a modern agricultural marketplace experience."
+      title: "Join as a farmer",
+      description: "Create your farmer account, set up your profile, and unlock the tools needed to sell and manage your farm digitally."
     },
     {
       title: "Subscribe for premium tools",
-      description: "Offer membership plans for advisory access, weather intelligence, and advanced farm reporting."
+      description: "Upgrade to premium membership for specialist advice, weather intelligence, and advanced farm reporting."
     },
     {
       title: "Sell, learn, and grow",
-      description: "Farmers list produce, access guidance, generate reports, and connect directly with ready buyers."
+      description: "Farmers publish produce, access expert guidance, generate reports, and reach ready buyers while visitors can order through guest checkout."
     }
   ];
 
