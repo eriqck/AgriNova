@@ -96,7 +96,7 @@ Remove-OldLogs -Paths @($backendLog, $backendErrLog, $frontendLog, $frontendErrL
 
 $backendProcess = Start-Process `
   -FilePath "npm.cmd" `
-  -ArgumentList "run", "dev" `
+  -ArgumentList "run", "start" `
   -WorkingDirectory $repoRoot `
   -RedirectStandardOutput $backendLog `
   -RedirectStandardError $backendErrLog `
