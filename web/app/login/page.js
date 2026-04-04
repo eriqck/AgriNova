@@ -14,7 +14,7 @@ export default function LoginPage() {
   useEffect(() => {
     const session = getStoredSession();
     if (session?.token) {
-      router.replace("/seller");
+      router.replace(session.user?.role === "ADMIN" ? "/admin" : "/seller");
     }
   }, [router]);
 
@@ -26,7 +26,9 @@ export default function LoginPage() {
     try {
       const session = await loginUser(form);
       saveSession(session);
-      router.push(session.user?.role === "BUYER" ? "/buyer" : "/seller");
+      router.push(
+        session.user?.role === "ADMIN" ? "/admin" : session.user?.role === "BUYER" ? "/buyer" : "/seller"
+      );
     } catch (submitError) {
       setError(submitError.message);
     } finally {

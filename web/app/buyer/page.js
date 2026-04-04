@@ -32,6 +32,11 @@ export default function BuyerPage() {
       return;
     }
 
+    if (stored.user?.role === "ADMIN") {
+      router.replace("/admin");
+      return;
+    }
+
     setSession(stored);
     setActiveModeState(getActiveMode(stored));
     void loadOrders(stored);

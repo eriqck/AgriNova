@@ -63,6 +63,11 @@ export default function SellerPage() {
       return;
     }
 
+    if (stored.user?.role === "ADMIN") {
+      router.replace("/admin");
+      return;
+    }
+
     setSession(stored);
     setActiveModeState(getActiveMode(stored));
     void loadSellerData(stored);

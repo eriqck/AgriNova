@@ -1,4 +1,5 @@
 import { Router } from "express";
+import adminRoutes from "./admin.routes.js";
 import deliveriesRoutes from "./deliveries.routes.js";
 import farmsRoutes from "./farms.routes.js";
 import healthRoutes from "./health.routes.js";
@@ -13,6 +14,7 @@ import usersRoutes from "./users.routes.js";
 
 const router = Router();
 
+router.use("/admin", adminRoutes);
 router.use("/health", healthRoutes);
 router.use("/users", usersRoutes);
 router.use("/membership-plans", membershipPlansRoutes);
