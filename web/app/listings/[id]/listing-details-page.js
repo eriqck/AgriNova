@@ -103,7 +103,7 @@ export default function ListingDetailsPage({ listingId }) {
         }
       });
 
-      setMessage(`Order #${createdOrder.id} created successfully. You can proceed to payment from your buyer flow next.`);
+      setMessage(`Order #${createdOrder.id} created successfully. Open the buyer dashboard to complete payment and track delivery.`);
       setOrderForm((current) => ({
         ...current,
         deliveryAddress: "",
@@ -193,6 +193,14 @@ export default function ListingDetailsPage({ listingId }) {
                 href="/login"
               >
                 Login to order
+              </Link>
+            ) : null}
+            {session?.token && buyerModeEnabled ? (
+              <Link
+                className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                href="/buyer"
+              >
+                Buyer dashboard
               </Link>
             ) : null}
           </div>

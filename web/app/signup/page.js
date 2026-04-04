@@ -40,7 +40,7 @@ export default function SignupPage() {
         password: form.password
       });
       saveSession(session);
-      router.push("/seller");
+      router.push(form.role === "BUYER" ? "/buyer" : "/seller");
     } catch (submitError) {
       setError(submitError.message);
     } finally {

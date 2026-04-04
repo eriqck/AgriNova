@@ -22,6 +22,7 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 
 - `database/001_mvp_schema.sql` - initial MySQL schema
 - `database/002_listing_images.sql` - image table migration for listing uploads
+- `database/003_memberships.sql` - membership plans, signup records, and membership payment tables
 - `src/app.js` - Express app setup
 - `src/server.js` - server entrypoint
 - `src/config/` - environment and database config
@@ -35,9 +36,10 @@ This is a lean Express + MySQL starter for the first marketplace loop of the sma
 1. Copy `.env.example` to `.env`
 2. Create a MySQL database named `smart_agriculture`
 3. Run the schema in `database/001_mvp_schema.sql`
-4. Install dependencies with `npm install`
-5. Start the API with `npm run dev`
-6. Register a user and log in to get a Bearer token for protected routes
+4. Run any follow-up migrations such as `database/002_listing_images.sql` and `database/003_memberships.sql`
+5. Install dependencies with `npm install`
+6. Start the API with `npm run dev`
+7. Register a user and log in to get a Bearer token for protected routes
 
 ## Frontend Setup
 
@@ -68,8 +70,12 @@ Runtime logs are written to `.local-dev/`.
 - Farmer and buyer registration/login
 - Marketplace browsing
 - Orders and Paystack checkout start
-- Buyer and seller dashboard sections
+- Buyer and seller dashboards
+- Farmer account mode switching between seller and buyer workflows
 - Product listing upload from device with up to 5 images
+- Paystack callback page for buyer checkout return
+- Membership plan signup and activation flow
+- Membership dashboard status for farmers and buyers
 
 ## MVP API Surface
 
@@ -116,6 +122,18 @@ Runtime logs are written to `.local-dev/`.
 
 - `POST /api/v1/deliveries`
 - `PATCH /api/v1/deliveries/:id/status`
+
+### Membership Plans
+
+- `GET /api/v1/membership-plans`
+
+### Memberships
+
+- `GET /api/v1/memberships/me`
+- `POST /api/v1/memberships`
+- `POST /api/v1/memberships/:id/initialize-payment`
+- `GET /api/v1/memberships/payments/verify/:reference`
+- `POST /api/v1/memberships/webhook/paystack`
 
 ## Suggested Next Steps
 

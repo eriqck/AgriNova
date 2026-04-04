@@ -39,6 +39,7 @@ export default function SellerPage() {
   const [products, setProducts] = useState([]);
   const [farms, setFarms] = useState([]);
   const [listings, setListings] = useState([]);
+  const [membershipData, setMembershipData] = useState({ currentMembership: null, memberships: [] });
   const [farmForm, setFarmForm] = useState(initialFarm);
   const [listingForm, setListingForm] = useState(initialListing);
   const [images, setImages] = useState([]);
@@ -72,7 +73,7 @@ export default function SellerPage() {
     setError("");
 
     if (mode === "BUYER") {
-      router.push("/");
+      router.push("/buyer");
     }
   }
 
@@ -81,15 +82,17 @@ export default function SellerPage() {
     setError("");
 
     try {
-      const [productData, farmData, listingData] = await Promise.all([
+      const [productData, farmData, listingData, membershipResponse] = await Promise.all([
         apiRequest("/products"),
         apiRequest(`/farms?farmerId=${activeSession.user.id}`, { token: activeSession.token }),
-        apiRequest(`/listings?ownerId=${activeSession.user.id}&status=ALL`, { token: activeSession.token })
+        apiRequest(`/listings?ownerId=${activeSession.user.id}&status=ALL`, { token: activeSession.token }),
+        apiRequest("/memberships/me", { token: activeSession.token })
       ]);
 
       setProducts(productData);
       setFarms(farmData);
       setListings(listingData);
+      setMembershipData(membershipResponse);
       setListingForm((current) => ({
         ...current,
         farmId: farmData[0]?.id ? String(farmData[0].id) : "",
@@ -233,6 +236,28 @@ export default function SellerPage() {
           </div>
         ) : null}
 
+        <section className="mt-8 rounded-[32px] border border-slate-200 bg-white p-7 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Membership</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                {membershipData.currentMembership ? membershipData.currentMembership.plan_name : "No active plan yet"}
+              </h2>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                {membershipData.currentMembership
+                  ? `Status: ${membershipData.currentMembership.status.replaceAll("_", " ")}${membershipData.currentMembership.expires_at ? ` · Expires ${formatDate(membershipData.currentMembership.expires_at)}` : ""}`
+                  : "Activate Lite Farmer or upgrade to Pro Farmer for premium intelligence and reporting tools."}
+              </p>
+            </div>
+            <Link
+              className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              href="/membership?plan=PRO_FARMER"
+            >
+              {membershipData.currentMembership ? "Manage membership" : "Choose a plan"}
+            </Link>
+          </div>
+        </section>
+
         {activeMode === "BUYER" ? (
           <div className="mt-6 rounded-[28px] border border-emerald-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Buyer mode enabled</p>
@@ -245,9 +270,9 @@ export default function SellerPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                href="/"
+                href="/buyer"
               >
-                Go to marketplace
+                Open buyer dashboard
               </Link>
               <button
                 className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
@@ -451,4 +476,10 @@ function formatCurrency(value) {
     currency: "KES",
     maximumFractionDigits: 0
   }).format(Number(value || 0));
+}
+
+function formatDate(value) {
+  return new Intl.DateTimeFormat("en-KE", {
+    dateStyle: "medium"
+  }).format(new Date(value));
 }

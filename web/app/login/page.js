@@ -26,7 +26,7 @@ export default function LoginPage() {
     try {
       const session = await loginUser(form);
       saveSession(session);
-      router.push("/seller");
+      router.push(session.user?.role === "BUYER" ? "/buyer" : "/seller");
     } catch (submitError) {
       setError(submitError.message);
     } finally {

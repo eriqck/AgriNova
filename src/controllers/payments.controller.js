@@ -8,7 +8,7 @@ function buildPlaceholderReference(orderId) {
 }
 
 export async function initializePayment(req, res) {
-  const { orderId, provider = "PAYSTACK", metadata } = req.body;
+  const { orderId, provider = "PAYSTACK", metadata, callbackUrl } = req.body;
 
   if (!orderId) {
     return res.status(400).json({
@@ -59,7 +59,7 @@ export async function initializePayment(req, res) {
     amount: order.total_amount,
     currency: order.currency,
     reference: providerReference,
-    callbackUrl: env.paystackCallbackUrl,
+    callbackUrl: callbackUrl || env.paystackCallbackUrl,
     metadata: {
       orderId: order.id,
       buyerName: order.buyer_name,

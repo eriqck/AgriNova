@@ -76,18 +76,21 @@ export default function MarketplaceLandingPage() {
 
   const plans = [
     {
+      code: "LITE_FARMER",
       name: "Lite Farmer",
       price: "KSh 0/mo",
       points: ["List produce", "Basic field records", "Buyer discovery", "Basic profile"],
       highlight: false
     },
     {
+      code: "PRO_FARMER",
       name: "Pro Farmer",
       price: "KSh 1,500/mo",
       points: ["Specialist advice", "Weather updates", "Scouting notes", "Farm reports", "Expenses and income"],
       highlight: true
     },
     {
+      code: "BUYER_PLUS",
       name: "Buyer Plus",
       price: "KSh 2,500/mo",
       points: ["Bulk sourcing", "Priority listings", "Verified supplier insights", "Order reports"],
@@ -434,14 +437,14 @@ export default function MarketplaceLandingPage() {
                   ))}
                 </div>
                 <Link
-                  href="/signup"
+                  href={`/membership?plan=${plan.code}`}
                   className={`mt-7 inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                     plan.highlight
                       ? "bg-white text-emerald-800 hover:bg-emerald-50"
                       : "bg-slate-950 text-white hover:bg-slate-800"
                   }`}
                 >
-                  Choose plan
+                  Sign up
                 </Link>
               </div>
             ))}

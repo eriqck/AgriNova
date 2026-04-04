@@ -114,6 +114,34 @@ The backend calculates the amount from the order record.
 }
 ```
 
+## List Membership Plans
+
+`GET /membership-plans`
+
+## Create Membership Signup
+
+`POST /memberships`
+
+```json
+{
+  "planCode": "PRO_FARMER"
+}
+```
+
+## Initialize Membership Payment
+
+`POST /memberships/12/initialize-payment`
+
+```json
+{
+  "callbackUrl": "http://localhost:3000/membership/callback"
+}
+```
+
+## Verify Membership Payment
+
+`GET /memberships/payments/verify/MEM-12-1234567890`
+
 ## Verify Payment
 
 `GET /payments/verify/PAY-1-1234567890`
